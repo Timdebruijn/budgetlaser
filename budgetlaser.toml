@@ -1,0 +1,20 @@
+# BudgetLaser v0.1 configuration. Every key is optional; these are the defaults.
+
+[input]
+source = "artnet"          # artnet | sacn | usbpro
+# universe = 0             # Art-Net port-address (QLC+ "universe 1" = 0) or sACN universe (default 1)
+serial_port = "/dev/ttyUSB0"
+start_address = 1          # 13 channels from here
+signal_loss = "blackout"   # blackout | hold
+signal_timeout_s = 3.0
+
+[output]
+fullscreen = true
+monitor = 0                # index in the monitor list (logged at start)
+mapping = "fit"            # fit (square scan field centred) | stretch
+line_width_px = 2.0
+glow = true
+glow_decay = 0.85          # per frame
+dimmer_gamma = 2.2
+internal_scale = 1.0       # 0.5 = render at half resolution (weak GPUs)
+exposure = 1.0

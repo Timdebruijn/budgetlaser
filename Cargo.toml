@@ -1,0 +1,17 @@
+[package]
+name = "budgetlaser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bytemuck = { version = "1.25.2", features = ["derive"] }
+env_logger = "0.11.11"
+log = "0.4.34"
+pollster = "1.0.1"
+serde = { version = "1.0.229", features = ["derive"] }
+serialport = "4.10.1"
+socket2 = { version = "0.6.5", features = ["all"] }
+toml = "1.1.8"
+triple_buffer = "9.0.0"
+wgpu = "30.0.1"
+winit = "0.30.13"
