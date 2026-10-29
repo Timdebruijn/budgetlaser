@@ -252,6 +252,13 @@ impl Renderer {
 
     fn recreate_targets(&mut self) {
         self.hdr_size = target_size(&self.config, self.cfg.internal_scale);
+        log::info!(
+            "surface {}x{}, internal {}x{}",
+            self.config.width,
+            self.config.height,
+            self.hdr_size.0,
+            self.hdr_size.1
+        );
         self.hdr = make_targets(&self.device, &self.tex_layout, &self.sampler, self.hdr_size);
         self.first = true;
     }
