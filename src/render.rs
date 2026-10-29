@@ -263,14 +263,20 @@ impl Renderer {
         self.first = true;
     }
 
-    pub fn render(&mut self, segs: &[Segment]) {
+    /// Draws and presents one frame; false when nothing was shown (window hidden).
+    pub fn render(&mut self, segs: &[Segment]) -> bool {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => return,
+            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                // No vsync to block on while hidden or minimised; without this the
+                // loop spins at 100% CPU.
+                std::thread::sleep(std::time::Duration::from_millis(16));
+                return false;
+            }
             _ => {
                 self.surface.configure(&self.device, &self.config);
-                return;
+                return false;
             }
         };
         let (w, h) = (self.hdr_size.0 as f32, self.hdr_size.1 as f32);
@@ -372,6 +378,7 @@ impl Renderer {
         self.queue.present(frame);
         self.frame += 1;
         self.first = false;
+        true
     }
 }
 
