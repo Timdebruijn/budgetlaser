@@ -55,6 +55,9 @@ impl FrameStats {
 
     /// Records one frame; returns (fps, worst frame ms, late frames) when a window closes.
     fn push(&mut self, now: f64, dt: f64) -> Option<(f64, f64, u32)> {
+        if now < self.t0 {
+            return None; // warm-up
+        }
         self.frames += 1;
         self.worst = self.worst.max(dt);
         if dt > 1.5 * self.interval {
@@ -177,6 +180,10 @@ impl ApplicationHandler for App {
             self.cfg.output.clone(),
         ));
         self.window = Some(window);
+        // Start measuring 1 s after window and GPU setup: the first frames include
+        // pipeline warm-up and would count as drops.
+        self.last_tick = self.now();
+        self.stats.t0 = self.last_tick + 1.0;
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
