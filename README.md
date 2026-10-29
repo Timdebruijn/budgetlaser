@@ -20,9 +20,15 @@ Log level via `RUST_LOG` (`debug` prints fps every 5 s).
 
 | Source | Config | Notes |
 |---|---|---|
-| Art-Net | `source = "artnet"`, `universe` = 15-bit port-address (QLC+ "universe 1" is 0) | Answers ArtPoll; shares UDP 6454 with other apps on the same host |
-| sACN | `source = "sacn"`, `universe` = 1..63999 | Multicast; priority ignored in v0.1 |
-| DMX USB Pro | `source = "usbpro"`, `serial_port` | Enttec Pro protocol; Open DMX clones cannot receive |
+| Art-Net | `"artnet"` in `sources`, `artnet_universe` = 15-bit port-address (QLC+ "universe 1" is 0) | Answers ArtPoll; shares UDP 6454 with other apps on the same host |
+| sACN | `"sacn"` in `sources`, `sacn_universe` = 1..63999 | Multicast; honours priority, ignores preview data |
+| DMX USB Pro | `"usbpro"` in `sources`, `serial_port` | Enttec Pro protocol; Open DMX clones cannot receive |
+
+Several sources and senders can drive the same universe at once. The highest priority among
+live senders wins and senders sharing that priority merge HTP (highest value per channel).
+Art-Net and USB Pro count as priority 100, the sACN default. A silent sender drops out after
+2.5 s (sACN, USB Pro) or 10 s (Art-Net, per its merge rules); an sACN sender that terminates
+its stream drops out at once. Per-address priority (start code 0xDD) is not supported.
 
 Fixture: 13 channels (mode, pattern, size, rotation, pan, tilt, R, G, B, dimmer, strobe,
 beam count, animation speed), as specified in the design document. Each `[[fixture]]` block

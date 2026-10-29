@@ -1,6 +1,6 @@
 //! Art-Net receiver: ArtDmx on UDP 6454, answers ArtPoll so consoles find us.
 
-use super::{Publisher, bind_shared};
+use super::{DEFAULT_PRIORITY, SenderId, Sink, bind_shared};
 use std::net::{SocketAddr, UdpSocket};
 
 pub const PORT: u16 = 6454;
@@ -44,7 +44,7 @@ pub fn poll_reply(ip: [u8; 4], universe: u16) -> [u8; 239] {
     r
 }
 
-pub fn run(universe: u16, mut out: Publisher) -> std::io::Result<()> {
+pub fn run(universe: u16, out: Sink) -> std::io::Result<()> {
     let sock = bind_shared(PORT)?;
     sock.set_broadcast(true)?;
     log::info!("Art-Net listening on UDP {PORT}, port-address {universe}");
@@ -54,7 +54,7 @@ pub fn run(universe: u16, mut out: Publisher) -> std::io::Result<()> {
         let pkt = &buf[..n];
         if let Some((u, data)) = parse_dmx(pkt) {
             if u == universe {
-                out.publish(data);
+                out.send(SenderId::ArtNet(from.ip()), DEFAULT_PRIORITY, data);
             }
         } else if is_poll(pkt) {
             // ponytail: unicast reply to the poller; directed broadcast if a console ignores it.

@@ -56,9 +56,12 @@ pub enum Mapping {
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Input {
-    pub source: Source,
-    /// Art-Net 15-bit port-address (QLC+ "universe 1" = 0) or sACN universe (1..63999).
-    pub universe: Option<u16>,
+    /// Active sources; several at once are merged (sACN priority, then HTP).
+    pub sources: Vec<Source>,
+    /// Art-Net 15-bit port-address (QLC+ "universe 1" = 0).
+    pub artnet_universe: u16,
+    /// sACN universe, 1..63999.
+    pub sacn_universe: u16,
     pub serial_port: String,
     pub signal_loss: SignalLoss,
     pub signal_timeout_s: f64,
@@ -91,7 +94,24 @@ impl Default for Config {
 }
 
 impl Config {
-    fn validate(self) -> Result<Self, String> {
+    fn validate(mut self) -> Result<Self, String> {
+        let i = &mut self.input;
+        i.sources.dedup();
+        if i.sources.is_empty() {
+            return Err("input.sources must name at least one source".into());
+        }
+        if i.artnet_universe > 0x7fff {
+            return Err(format!(
+                "input.artnet_universe {} exceeds 32767",
+                i.artnet_universe
+            ));
+        }
+        if !(1..=63999).contains(&i.sacn_universe) {
+            return Err(format!(
+                "input.sacn_universe {} must be 1..63999",
+                i.sacn_universe
+            ));
+        }
         if self.fixtures.is_empty() {
             return Err("at least one [[fixture]] is required".into());
         }
@@ -121,8 +141,9 @@ impl Config {
 impl Default for Input {
     fn default() -> Self {
         Self {
-            source: Source::Artnet,
-            universe: None,
+            sources: vec![Source::Artnet],
+            artnet_universe: 0,
+            sacn_universe: 1,
             serial_port: if cfg!(windows) {
                 "COM3".into()
             } else {
@@ -150,15 +171,6 @@ impl Default for Output {
     }
 }
 
-impl Input {
-    pub fn universe(&self) -> u16 {
-        self.universe.unwrap_or(match self.source {
-            Source::Sacn => 1,
-            _ => 0,
-        })
-    }
-}
-
 pub fn load(path: &str) -> Result<Config, String> {
     match std::fs::read_to_string(path) {
         Ok(s) => toml::from_str::<Config>(&s)
@@ -166,6 +178,9 @@ pub fn load(path: &str) -> Result<Config, String> {
                 let mut e = e.to_string();
                 if e.contains("unknown field `start_address`") {
                     e.push_str("\nstart_address moved to [[fixture]] blocks, see budgetlaser.toml");
+                }
+                if e.contains("unknown field `source`") || e.contains("unknown field `universe`") {
+                    e.push_str("\nuse sources = [...] with artnet_universe / sacn_universe");
                 }
                 e
             })
@@ -216,5 +231,17 @@ mod tests {
         assert!(!check("start_address = 501"));
         assert!(check("start_address = 496\npersonality = \"17ch\""));
         assert!(!check("start_address = 497\npersonality = \"17ch\""));
+    }
+
+    #[test]
+    fn sources_parse_and_validate() {
+        let c: Config = toml::from_str("[input]\nsources = [\"sacn\", \"artnet\"]").unwrap();
+        assert_eq!(c.input.sources, [Source::Sacn, Source::Artnet]);
+        assert!(c.validate().is_ok());
+        let none: Config = toml::from_str("[input]\nsources = []").unwrap();
+        assert!(none.validate().is_err());
+        let bad: Config = toml::from_str("[input]\nsacn_universe = 0").unwrap();
+        assert!(bad.validate().is_err());
+        assert!(toml::from_str::<Config>("[input]\nsource = \"artnet\"").is_err());
     }
 }
