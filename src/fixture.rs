@@ -1,8 +1,29 @@
-//! Fixture profile v0.1: 13 channels from a start address, plus smoothing.
+//! Fixture profiles (13-channel and 16-bit 17-channel), plus smoothing.
 
+use serde::Deserialize;
 use std::f32::consts::TAU;
 
-pub const CHANNELS: usize = 13;
+/// Channel layout. The 17-channel personality keeps 1-13 identical and appends
+/// fine channels 14-17 for size, rotation, pan and tilt, so console programming
+/// for the 13-channel mode keeps working.
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Personality {
+    #[default]
+    #[serde(rename = "13ch")]
+    Standard,
+    #[serde(rename = "17ch")]
+    Fine,
+}
+
+impl Personality {
+    pub fn footprint(self) -> usize {
+        match self {
+            Personality::Standard => 13,
+            Personality::Fine => 17,
+        }
+    }
+}
+
 pub const MAX_BEAMS: u32 = 64;
 const MAX_SPIN_RAD_S: f32 = 2.0 * TAU; // 2 rev/s at full speed
 const MAX_STROBE_HZ: f32 = 25.0;
@@ -66,8 +87,16 @@ fn unit(v: u8) -> f32 {
     v as f32 / 255.0
 }
 
-/// Decode the 13 channels starting at `ch` (slice of at least 13 bytes).
+/// 16-bit value as 0..1: the fine byte is a fraction of one coarse step, so
+/// fine = 0 gives exactly the 8-bit value.
+fn unit16(coarse: u8, fine: u8) -> f32 {
+    ((coarse as f32 + fine as f32 / 256.0) / 255.0).min(1.0)
+}
+
+/// Decode one fixture; `ch` is its footprint (13 or 17 bytes).
 pub fn decode(ch: &[u8]) -> Params {
+    // Fine channels 14-17: size, rotation, pan, tilt. Zero in the 13-channel mode.
+    let fine = |i: usize| ch.get(13 + i).copied().unwrap_or(0);
     let pattern = match ch[1] {
         0..=19 => Some(Pattern::Dot),
         20..=39 => Some(Pattern::Line),
@@ -77,17 +106,17 @@ pub fn decode(ch: &[u8]) -> Params {
         _ => None, // reserved
     };
     let rotation = match ch[3] {
-        v @ 0..=127 => Rotation::Static(v as f32 / 127.0 * TAU),
+        v @ 0..=127 => Rotation::Static((v as f32 + fine(1) as f32 / 256.0) / 127.0 * TAU),
         v @ 128..=191 => Rotation::Spin(-((v - 128) as f32 + 1.0) / 64.0 * MAX_SPIN_RAD_S),
         v => Rotation::Spin(((v - 192) as f32 + 1.0) / 64.0 * MAX_SPIN_RAD_S),
     };
     Params {
         on: ch[0] >= 10,
         pattern,
-        size: 0.02 + 0.98 * unit(ch[2]),
+        size: 0.02 + 0.98 * unit16(ch[2], fine(0)),
         rotation,
-        pan: unit(ch[4]) * 2.0 - 1.0,
-        tilt: unit(ch[5]) * 2.0 - 1.0,
+        pan: unit16(ch[4], fine(2)) * 2.0 - 1.0,
+        tilt: unit16(ch[5], fine(3)) * 2.0 - 1.0,
         rgb: [unit(ch[6]), unit(ch[7]), unit(ch[8])],
         dimmer: unit(ch[9]),
         strobe_hz: if ch[10] < 10 {
@@ -164,7 +193,7 @@ mod tests {
 
     #[test]
     fn decode_channels() {
-        let mut ch = [0u8; CHANNELS];
+        let mut ch = [0u8; 13];
         ch[0] = 255; // on
         ch[1] = 70; // fan
         ch[2] = 255; // full size
@@ -191,6 +220,31 @@ mod tests {
         ch[11] = 0;
         let p = decode(&ch);
         assert!(!p.on && p.pattern.is_none() && p.strobe_hz == 0.0 && p.beams == 1);
+    }
+
+    #[test]
+    fn fine_channels() {
+        let mut ch = [0u8; 17];
+        ch[4] = 128; // pan coarse
+        ch[15] = 128; // pan fine: half a coarse step
+        ch[3] = 10; // static angle
+        ch[14] = 255;
+        let coarse_only = decode(&ch[..13]);
+        let fine = decode(&ch);
+        let step = 2.0 / 255.0; // one coarse pan step in -1..1
+        assert!((fine.pan - coarse_only.pan - step / 2.0).abs() < 1e-6);
+        let (Rotation::Static(a), Rotation::Static(b)) = (coarse_only.rotation, fine.rotation)
+        else {
+            panic!()
+        };
+        assert!(b > a && b - a < TAU / 127.0);
+        // 13-channel decode equals 17-channel decode with fine = 0.
+        ch[13..].fill(0);
+        assert_eq!(decode(&ch), decode(&ch[..13]));
+        // Full scale never exceeds 1.
+        ch[2] = 255;
+        ch[13] = 255;
+        assert_eq!(decode(&ch).size, 1.0);
     }
 
     #[test]

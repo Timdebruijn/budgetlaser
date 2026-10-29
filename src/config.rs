@@ -1,3 +1,4 @@
+use crate::fixture::Personality;
 use serde::Deserialize;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -39,6 +40,7 @@ pub struct Input {
     pub serial_port: String,
     /// DMX start address, 1-based.
     pub start_address: u16,
+    pub personality: Personality,
     pub signal_loss: SignalLoss,
     pub signal_timeout_s: f64,
 }
@@ -70,6 +72,7 @@ impl Default for Input {
                 "/dev/ttyUSB0".into()
             },
             start_address: 1,
+            personality: Personality::default(),
             signal_loss: SignalLoss::Blackout,
             signal_timeout_s: 3.0,
         }
@@ -101,9 +104,26 @@ impl Input {
     }
 }
 
+impl Config {
+    fn validate(self) -> Result<Self, String> {
+        let first = self.input.start_address as usize;
+        let last = first + self.input.personality.footprint() - 1;
+        if first == 0 || last > 512 {
+            return Err(format!(
+                "start_address {first} with {} channels does not fit in 1..512",
+                self.input.personality.footprint()
+            ));
+        }
+        Ok(self)
+    }
+}
+
 pub fn load(path: &str) -> Result<Config, String> {
     match std::fs::read_to_string(path) {
-        Ok(s) => toml::from_str(&s).map_err(|e| format!("{path}: {e}")),
+        Ok(s) => toml::from_str::<Config>(&s)
+            .map_err(|e| format!("{path}: {e}"))?
+            .validate()
+            .map_err(|e| format!("{path}: {e}")),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             log::warn!("{path} not found, using defaults");
             Ok(Config::default())

@@ -4,7 +4,8 @@
 source = "artnet"          # artnet | sacn | usbpro
 # universe = 0             # Art-Net port-address (QLC+ "universe 1" = 0) or sACN universe (default 1)
 serial_port = "/dev/ttyUSB0"
-start_address = 1          # 13 channels from here
+start_address = 1
+personality = "13ch"       # 13ch | 17ch (adds fine channels 14-17 for size, rotation, pan, tilt)
 signal_loss = "blackout"   # blackout | hold
 signal_timeout_s = 3.0
 

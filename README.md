@@ -26,6 +26,9 @@ Log level via `RUST_LOG` (`debug` prints fps every 5 s).
 
 Fixture: 13 channels from `start_address` (mode, pattern, size, rotation, pan, tilt, R, G, B,
 dimmer, strobe, beam count, animation speed), as specified in the design document.
+`personality = "17ch"` adds fine channels 14-17 for size, rotation, pan and tilt; channels
+1-13 stay identical, so programming for the 13-channel mode keeps working. A fine channel
+is a fraction of one coarse step. Rotation fine only applies to the static-angle range.
 
 **Console fixture definition.** [fixtures/BudgetLaser-Beamer-Laser.qxf](fixtures/BudgetLaser-Beamer-Laser.qxf)
 describes the 13-channel mode for QLC+ (4.14 and 5.x share the format). Copy it into the QLC+
