@@ -3,6 +3,7 @@
 
 use crate::config::{Mapping, Output as Cfg};
 use crate::point::Segment;
+use std::ops::Range;
 use std::sync::Arc;
 use winit::window::Window;
 
@@ -12,12 +13,47 @@ const HDR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 #[repr(C)]
 struct Uniforms {
-    scale: [f32; 2],
     res: [f32; 2],
     half_width: f32,
     decay: f32,
     exposure: f32,
     gamma_out: f32,
+    _pad: [f32; 2],
+}
+
+/// Segments of one fixture and the zone of the output it draws into.
+pub struct Batch {
+    pub range: Range<usize>,
+    /// x, y, width, height as fractions of the output, origin top-left.
+    pub zone: [f32; 4],
+}
+
+/// Scan-field rectangle in target pixels (x, y from the top-left, width, height).
+fn scan_rect(zone: [f32; 4], mapping: Mapping, w: f32, h: f32) -> [f32; 4] {
+    let [zx, zy, zw, zh] = [zone[0] * w, zone[1] * h, zone[2] * w, zone[3] * h];
+    match mapping {
+        Mapping::Stretch => [zx, zy, zw, zh],
+        Mapping::Fit => {
+            let s = zw.min(zh);
+            [zx + (zw - s) / 2.0, zy + (zh - s) / 2.0, s, s]
+        }
+    }
+}
+
+/// Scan-field point (-1..1, +y up) to NDC of the whole target.
+fn to_ndc(p: [f32; 2], r: [f32; 4], w: f32, h: f32) -> [f32; 2] {
+    let x = r[0] + (p[0] * 0.5 + 0.5) * r[2];
+    let y_down = r[1] + (0.5 - p[1] * 0.5) * r[3];
+    [x / w * 2.0 - 1.0, 1.0 - y_down / h * 2.0]
+}
+
+/// Scissor in whole pixels, clamped to the target so wgpu accepts it.
+fn scissor(r: [f32; 4], w: u32, h: u32) -> (u32, u32, u32, u32) {
+    let x0 = (r[0].round().max(0.0) as u32).min(w - 1);
+    let y0 = (r[1].round().max(0.0) as u32).min(h - 1);
+    let x1 = ((r[0] + r[2]).round().max(0.0) as u32).clamp(x0 + 1, w);
+    let y1 = ((r[1] + r[3]).round().max(0.0) as u32).clamp(y0 + 1, h);
+    (x0, y0, x1 - x0, y1 - y0)
 }
 
 pub struct Renderer {
@@ -34,6 +70,7 @@ pub struct Renderer {
     decay_pipeline: wgpu::RenderPipeline,
     tonemap_pipeline: wgpu::RenderPipeline,
     segments: wgpu::Buffer,
+    staging: Vec<Segment>,
     hdr: [(wgpu::TextureView, wgpu::BindGroup); 2],
     hdr_size: (u32, u32),
     frame: usize,
@@ -233,6 +270,7 @@ impl Renderer {
             decay_pipeline,
             tonemap_pipeline,
             segments,
+            staging: Vec::new(),
             hdr,
             hdr_size,
             frame: 0,
@@ -264,7 +302,7 @@ impl Renderer {
     }
 
     /// Draws and presents one frame; false when nothing was shown (window hidden).
-    pub fn render(&mut self, segs: &[Segment]) -> bool {
+    pub fn render(&mut self, segs: &[Segment], batches: &[Batch]) -> bool {
         let frame = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(t)
             | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
@@ -280,16 +318,10 @@ impl Renderer {
             }
         };
         let (w, h) = (self.hdr_size.0 as f32, self.hdr_size.1 as f32);
-        let scale = match self.cfg.mapping {
-            Mapping::Stretch => [1.0, 1.0],
-            Mapping::Fit if w > h => [h / w, 1.0],
-            Mapping::Fit => [1.0, w / h],
-        };
         self.queue.write_buffer(
             &self.uniforms,
             0,
             bytemuck::bytes_of(&Uniforms {
-                scale,
                 res: [w, h],
                 half_width: (self.cfg.line_width_px * self.cfg.internal_scale * 0.5).max(0.5),
                 decay: if self.cfg.glow && !self.first {
@@ -303,12 +335,31 @@ impl Renderer {
                 } else {
                     1.0
                 },
+                _pad: [0.0; 2],
             }),
         );
-        let n = segs.len().min(MAX_SEGMENTS);
-        if n > 0 {
+        // Map each fixture's scan field into its zone; remember the scissor per draw.
+        self.staging.clear();
+        let mut draws = Vec::with_capacity(batches.len());
+        for b in batches {
+            let r = scan_rect(b.zone, self.cfg.mapping, w, h);
+            let start = self.staging.len();
+            let room = MAX_SEGMENTS - start;
+            for seg in segs[b.range.clone()].iter().take(room) {
+                self.staging.push(Segment {
+                    p0: to_ndc(seg.p0, r, w, h),
+                    p1: to_ndc(seg.p1, r, w, h),
+                    ..*seg
+                });
+            }
+            if self.staging.len() > start {
+                let sc = scissor(r, self.hdr_size.0, self.hdr_size.1);
+                draws.push((start as u32..self.staging.len() as u32, sc));
+            }
+        }
+        if !self.staging.is_empty() {
             self.queue
-                .write_buffer(&self.segments, 0, bytemuck::cast_slice(&segs[..n]));
+                .write_buffer(&self.segments, 0, bytemuck::cast_slice(&self.staging));
         }
 
         let cur = self.frame % 2;
@@ -337,18 +388,14 @@ impl Renderer {
                 pass.set_bind_group(1, &self.hdr[prev].1, &[]);
                 pass.draw(0..3, 0..1);
             }
-            if n > 0 {
-                // Clip to the scan field: points outside it are simply not drawn.
-                let (sw, sh) = (w * scale[0], h * scale[1]);
-                pass.set_scissor_rect(
-                    ((w - sw) / 2.0) as u32,
-                    ((h - sh) / 2.0) as u32,
-                    sw.round().max(1.0) as u32,
-                    sh.round().max(1.0) as u32,
-                );
+            if !draws.is_empty() {
+                // Clip each fixture to its scan field: points outside it are not drawn.
                 pass.set_pipeline(&self.line_pipeline);
                 pass.set_vertex_buffer(0, self.segments.slice(..));
-                pass.draw(0..6, 0..n as u32);
+                for (instances, (x, y, sw, sh)) in draws {
+                    pass.set_scissor_rect(x, y, sw, sh);
+                    pass.draw(0..6, instances);
+                }
             }
         }
         {
@@ -426,4 +473,27 @@ fn make_targets(
         (view, bg)
     };
     [make("hdr0"), make("hdr1")]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zones_map_scan_field() {
+        // Full 16:9 output, fit: centred square of the full height.
+        let r = scan_rect([0.0, 0.0, 1.0, 1.0], Mapping::Fit, 1920.0, 1080.0);
+        assert_eq!(r, [420.0, 0.0, 1080.0, 1080.0]);
+        assert_eq!(to_ndc([-1.0, 1.0], r, 1920.0, 1080.0), [-0.5625, 1.0]);
+        assert_eq!(to_ndc([0.0, 0.0], r, 1920.0, 1080.0), [0.0, 0.0]);
+        // Two fixtures side by side do not overlap.
+        let left = scan_rect([0.0, 0.0, 0.5, 1.0], Mapping::Fit, 1920.0, 1080.0);
+        let right = scan_rect([0.5, 0.0, 0.5, 1.0], Mapping::Fit, 1920.0, 1080.0);
+        assert!(left[0] + left[2] <= right[0]);
+        assert_eq!(scissor(left, 1920, 1080), (0, 60, 960, 960));
+        // Stretch fills the zone; scissor never leaves the target.
+        let s = scan_rect([0.5, 0.5, 0.5, 0.5], Mapping::Stretch, 100.0, 100.0);
+        assert_eq!(scissor(s, 100, 100), (50, 50, 50, 50));
+        assert_eq!(scissor([99.9, 0.0, 5.0, 5.0], 100, 100), (99, 0, 1, 5));
+    }
 }

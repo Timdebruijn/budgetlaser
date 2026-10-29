@@ -4,8 +4,6 @@
 source = "artnet"          # artnet | sacn | usbpro
 # universe = 0             # Art-Net port-address (QLC+ "universe 1" = 0) or sACN universe (default 1)
 serial_port = "/dev/ttyUSB0"
-start_address = 1
-personality = "13ch"       # 13ch | 17ch (adds fine channels 14-17 for size, rotation, pan, tilt)
 signal_loss = "blackout"   # blackout | hold
 signal_timeout_s = 3.0
 
@@ -19,3 +17,19 @@ glow_decay = 0.85          # per frame
 dimmer_gamma = 2.2
 internal_scale = 1.0       # 0.5 = render at half resolution (weak GPUs)
 exposure = 1.0
+
+# One block per virtual fixture (13 channels each, 17 with personality = "17ch"). Without
+# any [[fixture]] block there is one fixture at address 1 filling the output. zone = [x, y, width, height] as fractions of
+# the output, origin top-left; the scan field is placed in it according to output.mapping.
+[[fixture]]
+start_address = 1
+personality = "13ch"       # 13ch | 17ch (adds fine channels 14-17 for size, rotation, pan, tilt)
+zone = [0.0, 0.0, 1.0, 1.0]
+
+# Two fixtures side by side:
+# [[fixture]]
+# start_address = 1
+# zone = [0.0, 0.0, 0.5, 1.0]
+# [[fixture]]
+# start_address = 14
+# zone = [0.5, 0.0, 0.5, 1.0]

@@ -24,9 +24,12 @@ Log level via `RUST_LOG` (`debug` prints fps every 5 s).
 | sACN | `source = "sacn"`, `universe` = 1..63999 | Multicast; priority ignored in v0.1 |
 | DMX USB Pro | `source = "usbpro"`, `serial_port` | Enttec Pro protocol; Open DMX clones cannot receive |
 
-Fixture: 13 channels from `start_address` (mode, pattern, size, rotation, pan, tilt, R, G, B,
-dimmer, strobe, beam count, animation speed), as specified in the design document.
-`personality = "17ch"` adds fine channels 14-17 for size, rotation, pan and tilt; channels
+Fixture: 13 channels (mode, pattern, size, rotation, pan, tilt, R, G, B, dimmer, strobe,
+beam count, animation speed), as specified in the design document. Each `[[fixture]]` block
+in the config adds one fixture with its own `start_address`, `personality` and `zone` (a
+rectangle of the output), so several virtual lasers can share one projector. Footprints may
+overlap: two fixtures on the same address mirror each other. All fixtures listen to the same
+universe. `personality = "17ch"` adds fine channels 14-17 for size, rotation, pan and tilt; channels
 1-13 stay identical, so programming for the 13-channel mode keeps working. A fine channel
 is a fraction of one coarse step. Rotation fine only applies to the static-angle range.
 
