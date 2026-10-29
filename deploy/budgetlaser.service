@@ -1,0 +1,38 @@
+# BudgetLaser as a kiosk: cage (Wayland) on tty1, started at boot.
+# Pattern from the cage wiki, "Starting Cage on boot with systemd".
+[Unit]
+Description=BudgetLaser beamer laser simulator (cage kiosk on tty1)
+Documentation=https://github.com/Timdebruijn/budgetlaser
+After=systemd-user-sessions.service plymouth-quit-wait.service
+# sACN joins its multicast group at start; that fails without a network.
+Wants=network-online.target dbus.socket systemd-logind.service
+After=network-online.target dbus.socket systemd-logind.service
+Conflicts=getty@tty1.service
+After=getty@tty1.service
+ConditionPathExists=/dev/tty0
+
+[Service]
+Type=simple
+User=budgetlaser
+PAMName=budgetlaser
+TTYPath=/dev/tty1
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty1
+UtmpMode=user
+# A projector Pi usually has no keyboard or mouse; wlroots refuses to start without
+# input devices unless told otherwise. No pointer also means no cursor.
+Environment=WLR_LIBINPUT_NO_DEVICES=1
+# budgetlaser=debug adds the 10 s frame-pacing line the Pi gate is measured on.
+Environment=RUST_LOG=info,budgetlaser=debug
+ExecStart=/usr/bin/cage -- /usr/local/bin/budgetlaser /etc/budgetlaser/budgetlaser.toml
+ExecStartPost=+/usr/bin/chvt 1
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
