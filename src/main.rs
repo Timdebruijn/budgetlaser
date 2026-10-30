@@ -26,6 +26,7 @@ struct App {
     start: Instant,
     last_tick: f64,
     last_dmx: Option<f64>,
+    signal_ok: bool,
     stats: FrameStats,
 }
 
@@ -96,23 +97,21 @@ impl App {
             let n = self.cfg.input.personality.footprint();
             self.smoother
                 .push(fixture::decode(&universe[a..a + n]), now);
-            if self.last_dmx.is_none() {
-                log::info!("DMX signal present");
-            }
             self.last_dmx = Some(now);
         }
         let mut params = self.smoother.sample(now);
-        let lost = match self.last_dmx {
-            Some(t) => now - t > self.cfg.input.signal_timeout_s,
-            None => true,
-        };
-        if lost && self.cfg.input.signal_loss == SignalLoss::Blackout {
-            if self
-                .last_dmx
-                .is_some_and(|t| now - t < self.cfg.input.signal_timeout_s + dt as f64 + 0.001)
-            {
-                log::warn!("DMX signal lost, blackout");
+        let ok = self
+            .last_dmx
+            .is_some_and(|t| now - t <= self.cfg.input.signal_timeout_s);
+        if ok != self.signal_ok {
+            self.signal_ok = ok;
+            match (ok, self.cfg.input.signal_loss) {
+                (true, _) => log::info!("DMX signal present"),
+                (false, SignalLoss::Blackout) => log::warn!("DMX signal lost, blackout"),
+                (false, SignalLoss::Hold) => log::warn!("DMX signal lost, holding last state"),
             }
+        }
+        if !ok && self.cfg.input.signal_loss == SignalLoss::Blackout {
             params.on = false;
         }
         self.phases.tick(&params, dt);
@@ -123,8 +122,14 @@ impl App {
             &mut self.frame,
         );
         point::segments(&self.frame.points, &mut self.segments);
-        if let Some(r) = &mut self.renderer {
-            r.render(&self.segments);
+        let presented = self
+            .renderer
+            .as_mut()
+            .is_some_and(|r| r.render(&self.segments));
+
+        // Hidden frames sleep instead of waiting for vsync; they say nothing about pacing.
+        if !presented {
+            return;
         }
 
         if let Some((fps, worst_ms, late)) = self.stats.push(now, frame_dt) {
@@ -259,6 +264,7 @@ fn main() {
         start: Instant::now(),
         last_tick: 0.0,
         last_dmx: None,
+        signal_ok: false,
         stats: FrameStats::new(60.0),
     };
     event_loop.run_app(&mut app).expect("event loop");
