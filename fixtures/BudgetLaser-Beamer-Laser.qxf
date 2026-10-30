@@ -62,6 +62,11 @@
  </Channel>
  <Channel Name="Pan fine" Preset="PositionPanFine"/>
  <Channel Name="Tilt fine" Preset="PositionTiltFine"/>
+ <Channel Name="Beam width">
+  <Group Byte="0">Beam</Group>
+  <Capability Min="0" Max="0">Line width from config</Capability>
+  <Capability Min="1" Max="255">Line width 0.5x-8x (64 = 1x)</Capability>
+ </Channel>
  <Mode Name="13 Channel">
   <Channel Number="0">Mode</Channel>
   <Channel Number="1">Pattern</Channel>
@@ -76,6 +81,22 @@
   <Channel Number="10">Strobe</Channel>
   <Channel Number="11">Beams</Channel>
   <Channel Number="12">Animation speed</Channel>
+ </Mode>
+ <Mode Name="14 Channel">
+  <Channel Number="0">Mode</Channel>
+  <Channel Number="1">Pattern</Channel>
+  <Channel Number="2">Size</Channel>
+  <Channel Number="3">Rotation</Channel>
+  <Channel Number="4">Pan</Channel>
+  <Channel Number="5">Tilt</Channel>
+  <Channel Number="6">Red</Channel>
+  <Channel Number="7">Green</Channel>
+  <Channel Number="8">Blue</Channel>
+  <Channel Number="9">Dimmer</Channel>
+  <Channel Number="10">Strobe</Channel>
+  <Channel Number="11">Beams</Channel>
+  <Channel Number="12">Animation speed</Channel>
+  <Channel Number="13">Beam width</Channel>
  </Mode>
  <Mode Name="17 Channel">
   <Channel Number="0">Mode</Channel>
@@ -95,6 +116,26 @@
   <Channel Number="14">Rotation fine</Channel>
   <Channel Number="15">Pan fine</Channel>
   <Channel Number="16">Tilt fine</Channel>
+ </Mode>
+ <Mode Name="18 Channel">
+  <Channel Number="0">Mode</Channel>
+  <Channel Number="1">Pattern</Channel>
+  <Channel Number="2">Size</Channel>
+  <Channel Number="3">Rotation</Channel>
+  <Channel Number="4">Pan</Channel>
+  <Channel Number="5">Tilt</Channel>
+  <Channel Number="6">Red</Channel>
+  <Channel Number="7">Green</Channel>
+  <Channel Number="8">Blue</Channel>
+  <Channel Number="9">Dimmer</Channel>
+  <Channel Number="10">Strobe</Channel>
+  <Channel Number="11">Beams</Channel>
+  <Channel Number="12">Animation speed</Channel>
+  <Channel Number="13">Size fine</Channel>
+  <Channel Number="14">Rotation fine</Channel>
+  <Channel Number="15">Pan fine</Channel>
+  <Channel Number="16">Tilt fine</Channel>
+  <Channel Number="17">Beam width</Channel>
  </Mode>
  <Physical>
   <Bulb Type="Projector" Lumens="0" ColourTemperature="0"/>

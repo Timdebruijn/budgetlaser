@@ -147,7 +147,9 @@ impl App {
             );
             point::segments(&self.frame.points, &mut self.scratch);
             let start = self.segments.len();
-            self.segments.extend_from_slice(&self.scratch);
+            let width = params.width;
+            self.segments
+                .extend(self.scratch.iter().map(|s| point::Segment { width, ..*s }));
             self.batches.push(render::Batch {
                 range: start..self.segments.len(),
                 zone: f.cfg.zone,

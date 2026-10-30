@@ -25,12 +25,12 @@ exposure = 1.0
 dir = "ilda"               # relative to this config file
 frame_rate = 30.0          # frames per second at channel 13 = 128
 
-# One block per virtual fixture (13 channels each, 17 with personality = "17ch"). Without
+# One block per virtual fixture (13, 14, 17 or 18 channels, see personality). Without
 # any [[fixture]] block there is one fixture at address 1 filling the output. zone = [x, y, width, height] as fractions of
 # the output, origin top-left; the scan field is placed in it according to output.mapping.
 [[fixture]]
 start_address = 1
-personality = "13ch"       # 13ch | 17ch (adds fine channels 14-17 for size, rotation, pan, tilt)
+personality = "13ch"       # 13ch | 17ch (fine channels 14-17) | 14ch, 18ch (13ch, 17ch + beam width)
 zone = [0.0, 0.0, 1.0, 1.0]
 
 # Two fixtures side by side:

@@ -49,7 +49,8 @@ pub struct Segment {
     pub p0: [f32; 2],
     pub p1: [f32; 2],
     pub rgb: [f32; 3],
-    pub _pad: f32,
+    /// Multiplier on the configured line width.
+    pub width: f32,
 }
 
 /// ILDA semantics: the laser state of a point applies to the move into it, so a lit
@@ -70,7 +71,7 @@ pub fn segments(points: &[Point], out: &mut Vec<Segment>) {
             p0: from,
             p1: [p.x, p.y],
             rgb: [p.r, p.g, p.b],
-            _pad: 0.0,
+            width: 1.0,
         });
     }
 }

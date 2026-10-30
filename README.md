@@ -34,12 +34,22 @@ beam count, animation speed), as specified in the design document. Each `[[fixtu
 in the config adds one fixture with its own `start_address`, `personality` and `zone` (a
 rectangle of the output), so several virtual lasers can share one projector. Footprints may
 overlap: two fixtures on the same address mirror each other. All fixtures listen to the same
-universe. `personality = "17ch"` adds fine channels 14-17 for size, rotation, pan and tilt; channels
-1-13 stay identical, so programming for the 13-channel mode keeps working. A fine channel
-is a fraction of one coarse step. Rotation fine only applies to the static-angle range.
+universe. Channels 1-13 are the same in every personality, so programming for the
+13-channel mode keeps working:
+
+| `personality` | Adds |
+|---|---|
+| `13ch` | - |
+| `14ch` | 14 beam width |
+| `17ch` | 14-17 fine size, rotation, pan, tilt |
+| `18ch` | 14-17 fine, 18 beam width |
+
+A fine channel is a fraction of one coarse step. Rotation fine only applies to the
+static-angle range. Beam width scales `line_width_px` per fixture: 0 keeps the configured
+width, 1-255 go from 0.5x to 8x (about 64 = 1x), so a dim projector can draw thicker beams.
 
 **Console fixture definition.** [fixtures/BudgetLaser-Beamer-Laser.qxf](fixtures/BudgetLaser-Beamer-Laser.qxf)
-describes both modes (13 and 17 channel) for QLC+ (4.14 and 5.x share the format). Copy it
+describes all four modes (13, 14, 17 and 18 channel) for QLC+ (4.14 and 5.x share the format). Copy it
 into the QLC+ user fixture folder and restart QLC+; it then appears under manufacturer
 BudgetLaser:
 
