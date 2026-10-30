@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  pi:
+    name: Test and build for Raspberry Pi (aarch64)
+    runs-on: ubuntu-24.04-arm
+    # Debian bookworm, glibc 2.36: the binary runs on Pi OS bookworm and trixie.
+    container: rust:1.99.1-bookworm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked
+      - run: cargo build --release --locked
+      - uses: actions/upload-artifact@v7
+        with:
+          name: budgetlaser-aarch64-linux
+          path: target/release/budgetlaser

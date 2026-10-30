@@ -26,8 +26,57 @@ struct App {
     start: Instant,
     last_tick: f64,
     last_dmx: Option<f64>,
-    fps_count: u32,
-    fps_t: f64,
+    stats: FrameStats,
+}
+
+/// Frame pacing per 10 s window. With Fifo present every frame should take one
+/// refresh interval; a frame taking 1.5x that or more means the display showed
+/// the previous image twice (a drop). The Pi gate is measured on this.
+struct FrameStats {
+    interval: f64,
+    t0: f64,
+    frames: u32,
+    late: u32,
+    worst: f64,
+}
+
+impl FrameStats {
+    const WINDOW_S: f64 = 10.0;
+
+    fn new(refresh_hz: f64) -> Self {
+        Self {
+            interval: 1.0 / refresh_hz,
+            t0: 0.0,
+            frames: 0,
+            late: 0,
+            worst: 0.0,
+        }
+    }
+
+    /// Records one frame; returns (fps, worst frame ms, late frames) when a window closes.
+    fn push(&mut self, now: f64, dt: f64) -> Option<(f64, f64, u32)> {
+        if now < self.t0 {
+            return None; // warm-up
+        }
+        self.frames += 1;
+        self.worst = self.worst.max(dt);
+        if dt > 1.5 * self.interval {
+            self.late += 1;
+        }
+        if now - self.t0 < Self::WINDOW_S {
+            return None;
+        }
+        let report = (
+            self.frames as f64 / (now - self.t0),
+            self.worst * 1000.0,
+            self.late,
+        );
+        *self = Self {
+            t0: now,
+            ..Self::new(1.0 / self.interval)
+        };
+        Some(report)
+    }
 }
 
 impl App {
@@ -37,7 +86,8 @@ impl App {
 
     fn tick(&mut self) {
         let now = self.now();
-        let dt = (now - self.last_tick).clamp(0.0, 0.1) as f32;
+        let frame_dt = now - self.last_tick;
+        let dt = frame_dt.clamp(0.0, 0.1) as f32;
         self.last_tick = now;
 
         let (fresh, universe) = self.dmx.latest();
@@ -76,15 +126,17 @@ impl App {
             r.render(&self.segments);
         }
 
-        self.fps_count += 1;
-        if now - self.fps_t >= 5.0 {
-            log::debug!(
-                "{:.1} fps, {} segments",
-                self.fps_count as f64 / (now - self.fps_t),
+        if let Some((fps, worst_ms, late)) = self.stats.push(now, frame_dt) {
+            let level = if late > 0 {
+                log::Level::Warn
+            } else {
+                log::Level::Debug
+            };
+            log::log!(
+                level,
+                "{fps:.1} fps, worst frame {worst_ms:.1} ms, {late} dropped, {} segments",
                 self.segments.len()
             );
-            self.fps_count = 0;
-            self.fps_t = now;
         }
     }
 }
@@ -104,24 +156,35 @@ impl ApplicationHandler for App {
                 m.refresh_rate_millihertz().unwrap_or(0)
             );
         }
+        let monitor = monitors
+            .get(self.cfg.output.monitor)
+            .or(monitors.first())
+            .cloned();
         let mut attrs = Window::default_attributes().with_title("BudgetLaser");
         if self.cfg.output.fullscreen {
-            let m = monitors
-                .get(self.cfg.output.monitor)
-                .or(monitors.first())
-                .cloned();
-            attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(m)));
+            attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(monitor.clone())));
         } else {
             attrs = attrs.with_inner_size(winit::dpi::LogicalSize::new(960.0, 540.0));
         }
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         window.set_cursor_visible(!self.cfg.output.fullscreen);
+        // Wayland only reports current_monitor() after the surface enters an output,
+        // so use the monitor chosen for fullscreen.
+        let refresh_hz = monitor
+            .and_then(|m| m.refresh_rate_millihertz())
+            .map_or(60.0, |mhz| mhz as f64 / 1000.0);
+        log::info!("display refresh {refresh_hz:.2} Hz");
+        self.stats = FrameStats::new(refresh_hz);
         self.renderer = Some(render::Renderer::new(
             window.clone(),
             event_loop.owned_display_handle(),
             self.cfg.output.clone(),
         ));
         self.window = Some(window);
+        // Start measuring 1 s after window and GPU setup: the first frames include
+        // pipeline warm-up and would count as drops.
+        self.last_tick = self.now();
+        self.stats.t0 = self.last_tick + 1.0;
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
@@ -195,8 +258,28 @@ fn main() {
         start: Instant::now(),
         last_tick: 0.0,
         last_dmx: None,
-        fps_count: 0,
-        fps_t: 0.0,
+        stats: FrameStats::new(60.0),
     };
     event_loop.run_app(&mut app).expect("event loop");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FrameStats;
+
+    #[test]
+    fn frame_stats_counts_drops() {
+        let mut s = FrameStats::new(60.0);
+        let mut t = 0.0;
+        let mut report = None;
+        for i in 0..700 {
+            let dt = if i == 100 { 2.0 / 60.0 } else { 1.0 / 60.0 };
+            t += dt;
+            report = report.or(s.push(t, dt));
+        }
+        let (fps, worst_ms, late) = report.expect("window closed after 10 s");
+        assert_eq!(late, 1);
+        assert!((worst_ms - 33.3).abs() < 0.1);
+        assert!((fps - 60.0).abs() < 0.5, "{fps}");
+    }
 }

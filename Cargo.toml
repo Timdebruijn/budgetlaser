@@ -13,7 +13,7 @@ env_logger = "0.11.11"
 log = "0.4.34"
 pollster = "1.0.1"
 serde = { version = "1.0.229", features = ["derive"] }
-serialport = "4.10.1"
+serialport = { version = "4.10.1", default-features = false }
 socket2 = { version = "0.6.5", features = ["all"] }
 toml = "1.1.8"
 triple_buffer = "9.0.0"
