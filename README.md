@@ -16,9 +16,11 @@ cargo build --release
 Log level via `RUST_LOG` (`debug` prints fps every 5 s).
 
 `--record DIR [--seconds S] [--size WxH]` renders offscreen instead of opening a window and
-writes every frame (60 fps, default 10 s at 960x540) to `DIR` as a BMP, for screenshots and
-demo GIFs on a machine without a display. DMX input works as usual, so drive it with
-`tools/dmx_test.py` while it records.
+writes every frame (60 fps, default 10 s at 960x540, about 1.5 MB per frame) to `DIR` as a
+BMP, for screenshots and demo GIFs without a window, for example on a locked screen. It still
+needs a GPU. DMX input works as usual, so drive it with `tools/dmx_test.py` while it records;
+without DMX the frames are black. Use an empty `DIR`: older frames are not removed. A machine
+that cannot keep up logs late frames, and its clip plays back too fast.
 
 ## Input
 

@@ -269,12 +269,20 @@ fn record(mut app: App, dir: &Path, seconds: f64, (w, h): (u32, u32)) {
     app.stats = FrameStats::new(FPS);
     app.last_tick = app.now();
     let t0 = Instant::now();
-    let frames = (seconds * FPS).round() as u32;
+    let frames = ((seconds * FPS).round() as u32).max(1);
     log::info!("recording {frames} frames of {w}x{h} to {}", dir.display());
     for i in 0..frames {
         // Pace in real time, so DMX sent alongside lines up with the frames.
         let due = t0 + Duration::from_secs_f64(i as f64 / FPS);
-        std::thread::sleep(due.saturating_duration_since(Instant::now()));
+        let now = Instant::now();
+        if now > due + Duration::from_secs_f64(1.0 / FPS) {
+            // Animation follows the wall clock, so a slow machine records a fast clip.
+            log::warn!(
+                "frame {i} is {:.0} ms late",
+                (now - due).as_secs_f64() * 1000.0
+            );
+        }
+        std::thread::sleep(due.saturating_duration_since(now));
         app.tick();
         let (fw, fh, rgba) = app.renderer.as_ref().unwrap().read_frame();
         let file = dir.join(format!("frame_{i:05}.bmp"));
@@ -315,11 +323,14 @@ fn main() {
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         let parsed = match arg.as_str() {
-            "--record" => args.next().map(|d| record_dir = Some(d)),
+            "--record" => args
+                .next()
+                .filter(|d| !d.starts_with('-'))
+                .map(|d| record_dir = Some(d)),
             "--seconds" => args
                 .next()
                 .and_then(|v| v.parse().ok())
-                .filter(|s: &f64| *s > 0.0)
+                .filter(|s: &f64| s.is_finite() && *s > 0.0)
                 .map(|s| seconds = s),
             "--size" => args
                 .next()
