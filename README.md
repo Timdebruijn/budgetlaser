@@ -2,7 +2,7 @@
 
 <p align="center"><b>Turn a video projector into a DMX laser-effect fixture. Add haze, get beams.</b></p>
 
-<p align="center">Free and open source. Patch it on any lighting desk over Art-Net, sACN or DMX USB Pro,<br>
+<p align="center">Free and open source. Patch it on any lighting desk over Art-Net, sACN or DMX USB Pro,
 and play your own ILDA animations from the same cue list as the rest of your rig.</p>
 
 <p align="center">
