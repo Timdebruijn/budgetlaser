@@ -11,7 +11,17 @@ import socket
 import struct
 import time
 
-PATTERNS = {"dot": 10, "line": 30, "circle": 50, "fan": 70, "tunnel": 90}
+PATTERNS = {
+    "dot": 10,
+    "line": 30,
+    "circle": 50,
+    "fan": 70,
+    "tunnel": 90,
+    "grid": 110,
+    "twinkle": 130,
+    "wave": 150,
+    "polygon": 170,
+}
 
 
 def artdmx(universe: int, seq: int, data: bytes) -> bytes:
@@ -32,7 +42,7 @@ def main() -> None:
     ap.add_argument("--universe", type=int, default=0, help="Art-Net port-address (default: 0)")
     ap.add_argument("--start", type=int, default=1, help="fixture start address (default: 1)")
     ap.add_argument("--pattern", choices=PATTERNS, default="tunnel")
-    ap.add_argument("--beams", type=int, default=64, help="1..64 for fan and tunnel")
+    ap.add_argument("--beams", type=int, default=64, help="1..64; beams, dots, wave cycles or polygon sides per pattern")
     ap.add_argument("--color", default="40,255,80", help="R,G,B 0..255")
     ap.add_argument("--seconds", type=float, default=0, help="0 = until Ctrl-C")
     ap.add_argument("--rate", type=float, default=40, help="packets per second (default: 40)")
