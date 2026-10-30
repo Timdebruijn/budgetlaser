@@ -1,5 +1,5 @@
 //! Point-stream format: the only contract between inputs and the renderer.
-//! Follows ILDA closely so a .ild frame converts losslessly later.
+//! Follows ILDA closely so a .ild frame converts losslessly.
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Point {
@@ -56,32 +56,26 @@ pub struct Segment {
     pub _pad: f32,
 }
 
-/// Segment between consecutive lit points; an isolated lit point becomes a dot.
+/// ILDA semantics: the laser state of a point applies to the move into it, so a lit
+/// point draws the segment from the previous point, lit or blanked, in its own
+/// colour. A blanked jump onto the same spot, or an isolated first point, is a dot.
 pub fn segments(points: &[Point], out: &mut Vec<Segment>) {
     out.clear();
     for (i, p) in points.iter().enumerate() {
         if p.blank {
             continue;
         }
-        let prev_lit = i > 0 && !points[i - 1].blank;
-        let next_lit = i + 1 < points.len() && !points[i + 1].blank;
-        if prev_lit {
-            let q = points[i - 1];
-            // Colour of a segment is the colour of its end point (ILDA).
-            out.push(Segment {
-                p0: [q.x, q.y],
-                p1: [p.x, p.y],
-                rgb: [p.r, p.g, p.b],
-                _pad: 0.0,
-            });
-        } else if !next_lit {
-            out.push(Segment {
-                p0: [p.x, p.y],
-                p1: [p.x, p.y],
-                rgb: [p.r, p.g, p.b],
-                _pad: 0.0,
-            });
-        }
+        let from = match i.checked_sub(1) {
+            Some(j) => [points[j].x, points[j].y],
+            None if points.get(1).is_some_and(|n| !n.blank) => continue, // a line starts here
+            None => [p.x, p.y],
+        };
+        out.push(Segment {
+            p0: from,
+            p1: [p.x, p.y],
+            rgb: [p.r, p.g, p.b],
+            _pad: 0.0,
+        });
     }
 }
 
@@ -93,19 +87,28 @@ mod tests {
     fn segments_and_dots() {
         let c = [1.0, 1.0, 1.0];
         let pts = [
-            Point::lit(0.0, 0.0, c), // isolated -> dot
+            Point::lit(0.0, 0.0, c), // isolated first point -> dot
             Point::blank(0.5, 0.5),
-            Point::lit(-1.0, 0.0, c), // start of line
-            Point::lit(1.0, 0.0, c),  // end of line -> one segment
+            Point::lit(-1.0, 0.0, c), // lit move from the blanked point -> segment
+            Point::lit(1.0, 0.0, c),  // -> segment
             Point::blank(0.0, 0.0),
             Point::blank(0.0, 1.0),
-            Point::lit(0.0, 1.0, c), // isolated at end -> dot
+            Point::lit(0.0, 1.0, c), // blanked jump onto the same spot -> dot
         ];
         let mut segs = Vec::new();
         segments(&pts, &mut segs);
-        assert_eq!(segs.len(), 3);
-        assert_eq!(segs[0].p0, segs[0].p1);
-        assert_eq!((segs[1].p0, segs[1].p1), ([-1.0, 0.0], [1.0, 0.0]));
-        assert_eq!(segs[2].p0, [0.0, 1.0]);
+        let ends: Vec<_> = segs.iter().map(|s| (s.p0, s.p1)).collect();
+        assert_eq!(
+            ends,
+            [
+                ([0.0, 0.0], [0.0, 0.0]),
+                ([0.5, 0.5], [-1.0, 0.0]),
+                ([-1.0, 0.0], [1.0, 0.0]),
+                ([0.0, 1.0], [0.0, 1.0]),
+            ]
+        );
+        // A line's first point adds no dot of its own.
+        segments(&pts[2..4], &mut segs);
+        assert_eq!(segs.len(), 1);
     }
 }
