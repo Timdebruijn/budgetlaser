@@ -131,3 +131,25 @@ pub fn load(path: &str) -> Result<Config, String> {
         Err(e) => Err(format!("{path}: {e}")),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn check(toml: &str) -> bool {
+        toml::from_str::<Config>(toml).unwrap().validate().is_ok()
+    }
+
+    #[test]
+    fn start_address_bounds() {
+        assert!(!check("[input]\nstart_address = 0"));
+        assert!(check("[input]\nstart_address = 500"));
+        assert!(!check("[input]\nstart_address = 501"));
+        assert!(check(
+            "[input]\nstart_address = 496\npersonality = \"17ch\""
+        ));
+        assert!(!check(
+            "[input]\nstart_address = 497\npersonality = \"17ch\""
+        ));
+    }
+}

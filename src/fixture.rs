@@ -106,7 +106,9 @@ pub fn decode(ch: &[u8]) -> Params {
         _ => None, // reserved
     };
     let rotation = match ch[3] {
-        v @ 0..=127 => Rotation::Static((v as f32 + fine(1) as f32 / 256.0) / 127.0 * TAU),
+        v @ 0..=127 => {
+            Rotation::Static(((v as f32 + fine(1) as f32 / 256.0) / 127.0).min(1.0) * TAU)
+        }
         v @ 128..=191 => Rotation::Spin(-((v - 128) as f32 + 1.0) / 64.0 * MAX_SPIN_RAD_S),
         v => Rotation::Spin(((v - 192) as f32 + 1.0) / 64.0 * MAX_SPIN_RAD_S),
     };
