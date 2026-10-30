@@ -39,6 +39,8 @@ pub enum Pattern {
     Twinkle,
     Wave,
     Polygon,
+    /// Plays an .ild file from the ILDA directory.
+    Ilda,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -65,6 +67,8 @@ pub struct Params {
     /// 0 = open, else Hz.
     pub strobe_hz: f32,
     pub beams: u32,
+    /// Raw channel 12: the ILDA file index.
+    pub file: u8,
     /// 0..1
     pub anim: f32,
 }
@@ -82,6 +86,7 @@ impl Default for Params {
             dimmer: 0.0,
             strobe_hz: 0.0,
             beams: 1,
+            file: 0,
             anim: 0.0,
         }
     }
@@ -111,6 +116,7 @@ pub fn decode(ch: &[u8]) -> Params {
         120..=139 => Some(Pattern::Twinkle),
         140..=159 => Some(Pattern::Wave),
         160..=179 => Some(Pattern::Polygon),
+        180..=199 => Some(Pattern::Ilda),
         _ => None, // reserved
     };
     let rotation = match ch[3] {
@@ -135,6 +141,7 @@ pub fn decode(ch: &[u8]) -> Params {
             1.0 + (ch[10] - 10) as f32 / 245.0 * (MAX_STROBE_HZ - 1.0)
         },
         beams: 1 + (unit(ch[11]) * (MAX_BEAMS - 1) as f32).round() as u32,
+        file: ch[11],
         anim: unit(ch[12]),
     }
 }
@@ -222,7 +229,9 @@ mod tests {
             (120, Some(Pattern::Twinkle)),
             (159, Some(Pattern::Wave)),
             (179, Some(Pattern::Polygon)),
-            (180, None),
+            (180, Some(Pattern::Ilda)),
+            (199, Some(Pattern::Ilda)),
+            (200, None),
         ] {
             let mut c = ch;
             c[1] = v;
@@ -232,11 +241,11 @@ mod tests {
         assert_eq!(p.rotation, Rotation::Spin(MAX_SPIN_RAD_S));
         assert_eq!((p.pan, p.tilt), (-1.0, 1.0));
         assert_eq!(p.strobe_hz, MAX_STROBE_HZ);
-        assert_eq!(p.beams, 64);
+        assert_eq!((p.beams, p.file), (64, 255));
         ch[3] = 128;
         assert_eq!(decode(&ch).rotation, Rotation::Spin(-MAX_SPIN_RAD_S / 64.0));
         ch[0] = 9;
-        ch[1] = 180; // reserved
+        ch[1] = 200; // reserved
         ch[10] = 0;
         ch[11] = 0;
         let p = decode(&ch);

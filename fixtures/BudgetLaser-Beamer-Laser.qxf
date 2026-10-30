@@ -25,7 +25,8 @@
   <Capability Min="120" Max="139">Twinkle</Capability>
   <Capability Min="140" Max="159">Wave</Capability>
   <Capability Min="160" Max="179">Polygon</Capability>
-  <Capability Min="180" Max="255">Reserved</Capability>
+  <Capability Min="180" Max="199">ILDA file</Capability>
+  <Capability Min="200" Max="255">Reserved</Capability>
  </Channel>
  <Channel Name="Size" Default="255" Preset="BeamZoomSmallBig"/>
  <Channel Name="Rotation">
@@ -47,12 +48,12 @@
  </Channel>
  <Channel Name="Beams">
   <Group Byte="0">Effect</Group>
-  <Capability Min="0" Max="255">Beams 1-64 (fan, tunnel, twinkle), grid 1x1-8x8, wave 1-8 cycles, polygon 3-12 sides</Capability>
+  <Capability Min="0" Max="255">Beams 1-64 (fan, tunnel, twinkle), grid 1x1-8x8, wave 1-8 cycles, polygon 3-12 sides, ILDA file number 0-255</Capability>
  </Channel>
  <Channel Name="Animation speed">
   <Group Byte="0">Speed</Group>
-  <Capability Min="0" Max="0">Static</Capability>
-  <Capability Min="1" Max="255" Preset="SlowToFast">Animation slow to fast</Capability>
+  <Capability Min="0" Max="0">Static (ILDA: hold first frame)</Capability>
+  <Capability Min="1" Max="255" Preset="SlowToFast">Animation slow to fast (ILDA: 128 = frame_rate, 255 = 2x)</Capability>
  </Channel>
  <Channel Name="Size fine" Preset="BeamZoomFine"/>
  <Channel Name="Rotation fine">

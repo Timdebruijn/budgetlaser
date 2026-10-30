@@ -1,8 +1,7 @@
 # BudgetLaser
 
-Turns a projector in haze into a laser-effect fixture: one virtual DMX fixture that draws
-basic laser patterns (dot, line, circle, fan, tunnel) fullscreen. Every lit pixel becomes a
-beam from the lens, so the projector behaves like a scanner without moving parts.
+Turns a projector in haze into a laser-effect fixture: virtual DMX fixtures that draw laser
+patterns or play ILDA (.ild) files fullscreen. Every lit pixel becomes a beam from the lens, so the projector behaves like a scanner without moving parts.
 
 Design document: https://claude.ai/artifact/DKb3a19K6z61ffMABD3tJc
 
@@ -66,7 +65,18 @@ something per pattern:
 | 120-139 | Twinkle | 1-64 dots | dots fade in and out, then move |
 | 140-159 | Wave | 1-8 cycles | wave travels |
 | 160-179 | Polygon | 3-12 sides | outline breathes |
-| 180-255 | reserved | | |
+| 180-199 | ILDA file | file number 0-255 | playback speed; 0 holds frame 0 |
+| 200-255 | reserved | | |
+
+**ILDA files.** Put `.ild` files in the `[ilda] dir` (default `ilda/` next to the config
+file); they are loaded at start, sorted by file name, and the log lists each file with its
+number. Channel 12 selects a file by that number (raw 0-255, so value 3 is the fourth file).
+Formats 0, 1, 2, 4 and 5 of the ILDA spec (revision 011) are read; indexed colours without a
+palette use the spec's default palette. ILDA files carry no timing: frames play at
+`frame_rate` (default 30 fps) at channel 13 = 128, up to 2x at 255; 0 holds the first frame.
+The file's own colours show at R = G = B = 255; lower values tint them. Size, rotation,
+pan/tilt, dimmer and strobe work as for the patterns. A file that fails to load keeps its
+number but draws nothing. New files need a restart.
 
 Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
 
@@ -104,8 +114,10 @@ Target: Raspberry Pi OS Lite (trixie), no desktop. BudgetLaser runs fullscreen i
    ```
 
    This installs `cage`, creates the `budgetlaser` user (in `dialout` for the USB Pro),
-   installs the binary, config, PAM file and `budgetlaser.service`, and starts it. The
-   service replaces the login prompt on tty1; use SSH to manage the Pi.
+   installs the binary, config, PAM file and `budgetlaser.service`, creates
+   `/etc/budgetlaser/ilda` for .ild files, and starts it. The service replaces the login
+   prompt on tty1; use SSH to manage the Pi. After adding .ild files, run
+   `sudo systemctl restart budgetlaser`.
 3. Logs: `journalctl -u budgetlaser -f`.
 
 **Measuring the v0.1 gate** (1080p60 with glow, stable): set the beamer to 1080p60, keep
@@ -124,8 +136,7 @@ to see which pass costs the frames.
 
 Single crate; modules mirror the planned crates: `point` (point-stream contract), `fixture`
 (channel decode, smoothing), `pattern` (generators + transform chain), `input/*` (sources,
-triple buffer), `render` (wgpu), `main` (config, window, loop). ILDA sources plug in at the
-point stream later.
+triple buffer), `ilda` (.ild reader), `render` (wgpu), `main` (config, window, loop).
 
 ```bash
 cargo test

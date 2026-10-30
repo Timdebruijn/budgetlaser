@@ -38,12 +38,8 @@ impl Point {
 }
 
 #[derive(Clone, Debug, Default)]
-#[allow(dead_code)] // point_rate/timestamp are read by ILDA sources (v0.3)
 pub struct Frame {
     pub points: Vec<Point>,
-    /// Points per second; informative for DMX patterns, timing for ILDA later.
-    pub point_rate: u32,
-    pub timestamp: f64,
 }
 
 /// A drawable primitive: segment between two lit points, or a dot (p0 == p1).
