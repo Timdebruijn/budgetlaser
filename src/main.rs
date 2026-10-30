@@ -253,21 +253,32 @@ fn main() {
     };
     log::info!("config: {cfg:?}");
 
-    let (publisher, receiver) = input::channel();
-    let inp = cfg.input.clone();
+    let (sink, receiver) = input::channel();
+    for &source in &cfg.input.sources {
+        let (inp, sink) = (cfg.input.clone(), sink.clone());
+        std::thread::Builder::new()
+            .name(format!("dmx-{source:?}").to_lowercase())
+            .spawn(move || {
+                let r = match source {
+                    Source::Artnet => input::artnet::run(inp.artnet_universe, sink),
+                    Source::Sacn => input::sacn::run(inp.sacn_universe, sink),
+                    Source::Usbpro => input::usbpro::run(&inp.serial_port, sink),
+                };
+                if let Err(e) = r {
+                    log::error!("{source:?} input stopped: {e}");
+                }
+            })
+            .expect("spawn input thread");
+    }
     std::thread::Builder::new()
-        .name("dmx-input".into())
+        .name("dmx-tick".into())
         .spawn(move || {
-            let r = match inp.source {
-                Source::Artnet => input::artnet::run(inp.universe(), publisher),
-                Source::Sacn => input::sacn::run(inp.universe(), publisher),
-                Source::Usbpro => input::usbpro::run(&inp.serial_port, publisher),
-            };
-            if let Err(e) = r {
-                log::error!("DMX input stopped: {e}");
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                sink.tick();
             }
         })
-        .expect("spawn input thread");
+        .expect("spawn input ticker");
 
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);

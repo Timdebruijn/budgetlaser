@@ -1,8 +1,9 @@
 # BudgetLaser v0.1 configuration. Every key is optional; these are the defaults.
 
 [input]
-source = "artnet"          # artnet | sacn | usbpro
-# universe = 0             # Art-Net port-address (QLC+ "universe 1" = 0) or sACN universe (default 1)
+sources = ["artnet"]       # any of artnet, sacn, usbpro; several are merged
+artnet_universe = 0        # Art-Net port-address (QLC+ "universe 1" = 0)
+sacn_universe = 1
 serial_port = "/dev/ttyUSB0"
 signal_loss = "blackout"   # blackout | hold
 signal_timeout_s = 3.0

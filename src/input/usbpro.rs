@@ -1,7 +1,7 @@
 //! Enttec DMX USB Pro protocol over a serial port (receive side).
 //! Open DMX clones cannot receive and are not supported.
 
-use super::Publisher;
+use super::{DEFAULT_PRIORITY, SenderId, Sink};
 use std::io::Read;
 use std::time::Duration;
 
@@ -48,7 +48,7 @@ pub fn drain(buf: &mut Vec<u8>, mut on_dmx: impl FnMut(&[u8])) {
     buf.drain(..pos);
 }
 
-pub fn run(path: &str, mut out: Publisher) -> std::io::Result<()> {
+pub fn run(path: &str, out: Sink) -> std::io::Result<()> {
     let mut port = serialport::new(path, 57600)
         .timeout(Duration::from_millis(100))
         .open()?;
@@ -61,7 +61,9 @@ pub fn run(path: &str, mut out: Publisher) -> std::io::Result<()> {
             Ok(0) => {}
             Ok(n) => {
                 acc.extend_from_slice(&chunk[..n]);
-                drain(&mut acc, |dmx| out.publish(dmx));
+                drain(&mut acc, |dmx| {
+                    out.send(SenderId::UsbPro, DEFAULT_PRIORITY, dmx)
+                });
                 if acc.len() > 4096 {
                     acc.clear(); // garbage without framing; start over
                 }
