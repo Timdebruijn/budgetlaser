@@ -15,6 +15,11 @@ cargo build --release
 `Esc` quits. All keys in `budgetlaser.toml` are optional; see the comments there.
 Log level via `RUST_LOG` (`debug` prints fps every 5 s).
 
+`--record DIR [--seconds S] [--size WxH]` renders offscreen instead of opening a window and
+writes every frame (60 fps, default 10 s at 960x540) to `DIR` as a BMP, for screenshots and
+demo GIFs on a machine without a display. DMX input works as usual, so drive it with
+`tools/dmx_test.py` while it records.
+
 ## Input
 
 | Source | Config | Notes |

@@ -8,8 +8,9 @@ mod render;
 
 use config::{Config, SignalLoss, Source};
 use fixture::Pattern;
+use std::path::Path;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
@@ -253,11 +254,92 @@ impl ApplicationHandler for App {
     }
 }
 
+const USAGE: &str = "usage: budgetlaser [config.toml] [--record DIR [--seconds S] [--size WxH]]";
+
+/// Renders offscreen at 60 fps for `seconds` and writes every frame to `dir` as a
+/// BMP, for screenshots and demo GIFs without a display. DMX input works as usual.
+fn record(mut app: App, dir: &Path, seconds: f64, (w, h): (u32, u32)) {
+    // Glow decays per frame and is tuned for a 60 Hz display.
+    const FPS: f64 = 60.0;
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        eprintln!("{}: {e}", dir.display());
+        std::process::exit(2);
+    }
+    app.renderer = Some(render::Renderer::offscreen(w, h, app.cfg.output.clone()));
+    app.stats = FrameStats::new(FPS);
+    app.last_tick = app.now();
+    let t0 = Instant::now();
+    let frames = (seconds * FPS).round() as u32;
+    log::info!("recording {frames} frames of {w}x{h} to {}", dir.display());
+    for i in 0..frames {
+        // Pace in real time, so DMX sent alongside lines up with the frames.
+        let due = t0 + Duration::from_secs_f64(i as f64 / FPS);
+        std::thread::sleep(due.saturating_duration_since(Instant::now()));
+        app.tick();
+        let (fw, fh, rgba) = app.renderer.as_ref().unwrap().read_frame();
+        let file = dir.join(format!("frame_{i:05}.bmp"));
+        if let Err(e) = std::fs::write(&file, bmp(fw, fh, &rgba)) {
+            eprintln!("{}: {e}", file.display());
+            std::process::exit(1);
+        }
+    }
+}
+
+/// 24-bit BMP: no image library needed, and every image tool reads it.
+fn bmp(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let row = (w * 3).div_ceil(4) * 4;
+    let size = 54 + row * h;
+    let mut out = b"BM".to_vec();
+    for v in [size, 0, 54, 40, w, h] {
+        out.extend_from_slice(&v.to_le_bytes());
+    }
+    out.extend_from_slice(&1u16.to_le_bytes()); // planes
+    out.extend_from_slice(&24u16.to_le_bytes()); // bits per pixel
+    for v in [0, row * h, 2835, 2835, 0, 0] {
+        out.extend_from_slice(&v.to_le_bytes()); // uncompressed, 72 dpi
+    }
+    for y in (0..h as usize).rev() {
+        // Bottom row first, BGR.
+        for px in rgba[y * w as usize * 4..][..w as usize * 4].chunks(4) {
+            out.extend_from_slice(&[px[2], px[1], px[0]]);
+        }
+        out.resize(out.len() + (row - w * 3) as usize, 0);
+    }
+    out
+}
+
 fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
-    let path = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "budgetlaser.toml".into());
+    let mut path = "budgetlaser.toml".to_string();
+    let (mut record_dir, mut seconds, mut size) = (None, 10.0, (960, 540));
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        let parsed = match arg.as_str() {
+            "--record" => args.next().map(|d| record_dir = Some(d)),
+            "--seconds" => args
+                .next()
+                .and_then(|v| v.parse().ok())
+                .filter(|s: &f64| *s > 0.0)
+                .map(|s| seconds = s),
+            "--size" => args
+                .next()
+                .and_then(|v| {
+                    let (w, h) = v.split_once('x')?;
+                    Some((w.parse().ok()?, h.parse().ok()?))
+                })
+                .filter(|&(w, h): &(u32, u32)| w > 0 && h > 0)
+                .map(|s| size = s),
+            a if a.starts_with('-') => None,
+            _ => {
+                path = arg.clone();
+                Some(())
+            }
+        };
+        if parsed.is_none() {
+            eprintln!("bad argument {arg}\n{USAGE}");
+            std::process::exit(2);
+        }
+    }
     let cfg = match config::load(&path) {
         Ok(c) => c,
         Err(e) => {
@@ -299,8 +381,6 @@ fn main() {
         })
         .expect("spawn input ticker");
 
-    let event_loop = EventLoop::new().expect("event loop");
-    event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
         cfg: cfg.clone(),
         dmx: receiver,
@@ -326,12 +406,36 @@ fn main() {
         signal_ok: false,
         stats: FrameStats::new(60.0),
     };
+    if let Some(dir) = record_dir {
+        record(app, Path::new(&dir), seconds, size);
+        return;
+    }
+    let event_loop = EventLoop::new().expect("event loop");
+    event_loop.set_control_flow(ControlFlow::Poll);
     event_loop.run_app(&mut app).expect("event loop");
 }
 
 #[cfg(test)]
 mod tests {
-    use super::FrameStats;
+    use super::{FrameStats, bmp};
+
+    #[test]
+    fn bmp_layout() {
+        // 2x2 RGBA, top row red and green, bottom row blue and white.
+        let px = [
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+        ];
+        let b = bmp(2, 2, &px);
+        assert_eq!(&b[..2], b"BM");
+        assert_eq!(b.len(), 54 + 2 * 8); // rows of 6 bytes padded to 8
+        assert_eq!(
+            u32::from_le_bytes(b[2..6].try_into().unwrap()),
+            b.len() as u32
+        );
+        // Bottom row first, BGR: blue, white, padding; then red, green.
+        assert_eq!(&b[54..62], &[255, 0, 0, 255, 255, 255, 0, 0]);
+        assert_eq!(&b[62..68], &[0, 0, 255, 0, 255, 0]);
+    }
 
     #[test]
     fn frame_stats_counts_drops() {
