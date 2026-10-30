@@ -1,5 +1,6 @@
 mod config;
 mod fixture;
+mod ilda;
 mod input;
 mod pattern;
 mod point;
