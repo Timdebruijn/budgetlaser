@@ -92,9 +92,10 @@ impl App {
 
         let (fresh, universe) = self.dmx.latest();
         if fresh {
-            let a = (self.cfg.input.start_address.clamp(1, 500) - 1) as usize;
+            let a = self.cfg.input.start_address as usize - 1;
+            let n = self.cfg.input.personality.footprint();
             self.smoother
-                .push(fixture::decode(&universe[a..a + fixture::CHANNELS]), now);
+                .push(fixture::decode(&universe[a..a + n]), now);
             if self.last_dmx.is_none() {
                 log::info!("DMX signal present");
             }
