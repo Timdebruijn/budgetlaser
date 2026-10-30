@@ -6,6 +6,7 @@ use serde::Deserialize;
 pub struct Config {
     pub input: Input,
     pub output: Output,
+    pub ilda: Ilda,
     #[serde(rename = "fixture")]
     pub fixtures: Vec<Fixture>,
 }
@@ -67,6 +68,25 @@ pub struct Input {
     pub signal_timeout_s: f64,
 }
 
+/// .ild playback, selected per fixture on channel 2 (180-199) and channel 12.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct Ilda {
+    /// Directory with .ild files; relative to the config file.
+    pub dir: String,
+    /// Frames per second at channel 13 = 128.
+    pub frame_rate: f32,
+}
+
+impl Default for Ilda {
+    fn default() -> Self {
+        Self {
+            dir: "ilda".into(),
+            frame_rate: 30.0,
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Output {
@@ -88,6 +108,7 @@ impl Default for Config {
         Self {
             input: Input::default(),
             output: Output::default(),
+            ilda: Ilda::default(),
             fixtures: vec![Fixture::default()],
         }
     }
@@ -112,6 +133,9 @@ impl Config {
                 "input.sacn_universe {} must be 1..63999",
                 i.sacn_universe
             ));
+        }
+        if !(self.ilda.frame_rate > 0.0 && self.ilda.frame_rate.is_finite()) {
+            return Err("ilda.frame_rate must be above 0".into());
         }
         if self.fixtures.is_empty() {
             return Err("at least one [[fixture]] is required".into());
@@ -232,6 +256,16 @@ mod tests {
         assert!(!check("start_address = 501"));
         assert!(check("start_address = 496\npersonality = \"17ch\""));
         assert!(!check("start_address = 497\npersonality = \"17ch\""));
+    }
+
+    #[test]
+    fn ilda_section_and_shipped_config() {
+        let c: Config = toml::from_str("[ilda]\ndir = \"/srv/ild\"\nframe_rate = 25.0").unwrap();
+        assert_eq!((c.ilda.dir.as_str(), c.ilda.frame_rate), ("/srv/ild", 25.0));
+        let bad: Config = toml::from_str("[ilda]\nframe_rate = 0.0").unwrap();
+        assert!(bad.validate().is_err());
+        let shipped: Config = toml::from_str(include_str!("../budgetlaser.toml")).unwrap();
+        assert!(shipped.validate().is_ok());
     }
 
     #[test]

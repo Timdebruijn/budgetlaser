@@ -19,6 +19,12 @@ dimmer_gamma = 2.2
 internal_scale = 1.0       # 0.5 = render at half resolution (weak GPUs)
 exposure = 1.0
 
+# .ild playback: channel 2 = 180-199 plays a file, channel 12 picks it (0 = first .ild
+# file in dir, sorted by name), channel 13 sets the speed (0 holds the first frame).
+[ilda]
+dir = "ilda"               # relative to this config file
+frame_rate = 30.0          # frames per second at channel 13 = 128
+
 # One block per virtual fixture (13 channels each, 17 with personality = "17ch"). Without
 # any [[fixture]] block there is one fixture at address 1 filling the output. zone = [x, y, width, height] as fractions of
 # the output, origin top-left; the scan field is placed in it according to output.mapping.

@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use winit::window::Window;
 
-const MAX_SEGMENTS: usize = 8192; // ponytail: fixed cap; grow the buffer when ILDA frames exceed it
+const MAX_SEGMENTS: usize = 65536; // one full ILDA frame (65535 points); ~2 MB
 const HDR: wgpu::TextureFormat = wgpu::TextureFormat::Rgba16Float;
 
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]

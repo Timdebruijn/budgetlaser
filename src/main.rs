@@ -7,6 +7,7 @@ mod point;
 mod render;
 
 use config::{Config, SignalLoss, Source};
+use fixture::Pattern;
 use std::sync::Arc;
 use std::time::Instant;
 use winit::application::ApplicationHandler;
@@ -28,6 +29,7 @@ struct App {
     window: Option<Arc<Window>>,
     renderer: Option<render::Renderer>,
     fixtures: Vec<Fixture>,
+    clips: Vec<ilda::Clip>,
     frame: point::Frame,
     segments: Vec<point::Segment>,
     scratch: Vec<point::Segment>,
@@ -128,9 +130,18 @@ impl App {
             let mut params = f.smoother.sample(now);
             params.on &= !blackout;
             f.phases.tick(&params, dt);
+            let clip = match params.pattern {
+                Some(Pattern::Ilda) => self.clips.get(params.file as usize),
+                _ => None,
+            }
+            .map_or(&[][..], Vec::as_slice);
+            f.phases
+                .tick_clip(clip.len(), &params, self.cfg.ilda.frame_rate, dt);
             pattern::build(
                 &params,
                 &f.phases,
+                clip.get(f.phases.clip_pos as usize)
+                    .map_or(&[], Vec::as_slice),
                 self.cfg.output.dimmer_gamma,
                 &mut self.frame,
             );
@@ -253,6 +264,11 @@ fn main() {
         }
     };
     log::info!("config: {cfg:?}");
+    let ilda_dir = std::path::Path::new(&path)
+        .parent()
+        .unwrap_or(std::path::Path::new(""))
+        .join(&cfg.ilda.dir);
+    let clips = ilda::load_dir(&ilda_dir);
 
     let (sink, receiver) = input::channel();
     for &source in &cfg.input.sources {
@@ -297,6 +313,7 @@ fn main() {
                 phases: pattern::Phases::default(),
             })
             .collect(),
+        clips,
         frame: point::Frame::default(),
         segments: Vec::new(),
         scratch: Vec::new(),

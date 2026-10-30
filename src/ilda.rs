@@ -1,8 +1,11 @@
 //! Reader for ILDA Image Data Transfer Format files (.ild), revision 011.
 //! Formats 0, 1, 4 and 5 are frames, format 2 is a colour palette.
-#![allow(dead_code)] // used by the .ild player (v0.3)
 
 use crate::point::Point;
+use std::path::Path;
+
+/// All frames of one .ild file, in file order.
+pub type Clip = Vec<Vec<Point>>;
 
 const HEADER_LEN: usize = 32;
 const BLANKING: u8 = 0x40;
@@ -35,7 +38,7 @@ const DEFAULT_PALETTE: [[u8; 3]; 64] = [
 /// since many writers omit it. Colour indices beyond the palette draw white.
 // ponytail: one palette for all projector numbers; per-projector palettes if
 // multi-projector files ever matter.
-pub fn parse(data: &[u8]) -> Result<Vec<Vec<Point>>, String> {
+pub fn parse(data: &[u8]) -> Result<Clip, String> {
     let mut frames = Vec::new();
     let mut palette: Vec<[u8; 3]> = DEFAULT_PALETTE.to_vec();
     let mut at = 0;
@@ -85,6 +88,48 @@ pub fn parse(data: &[u8]) -> Result<Vec<Vec<Point>>, String> {
         frames.push(points.collect());
     }
     Ok(frames)
+}
+
+/// Loads every .ild file in `dir`, sorted by file name; DMX channel 12 picks one by
+/// its index here. A file that fails to parse keeps its slot as an empty clip, so
+/// the indices programmed on the console do not shift.
+pub fn load_dir(dir: &Path) -> Vec<Clip> {
+    let mut paths: Vec<_> = match std::fs::read_dir(dir) {
+        Ok(entries) => entries
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("ild")))
+            .collect(),
+        Err(e) => {
+            log::info!("no ILDA files: {}: {e}", dir.display());
+            return Vec::new();
+        }
+    };
+    paths.sort();
+    if paths.len() > 256 {
+        log::warn!(
+            "{} ILDA files; channel 12 reaches the first 256",
+            paths.len()
+        );
+    }
+    paths
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            let parsed = std::fs::read(p)
+                .map_err(|e| e.to_string())
+                .and_then(|d| parse(&d));
+            match parsed {
+                Ok(frames) => {
+                    log::info!("ILDA {i}: {} ({} frames)", p.display(), frames.len());
+                    frames
+                }
+                Err(e) => {
+                    log::error!("ILDA {i}: {}: {e}", p.display());
+                    Vec::new()
+                }
+            }
+        })
+        .collect()
 }
 
 #[cfg(test)]

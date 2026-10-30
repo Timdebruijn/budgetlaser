@@ -4,6 +4,7 @@
 Examples:
   tools/dmx_test.py --pattern tunnel --beams 64            # worst case for the Pi gate
   tools/dmx_test.py --host 192.168.1.50 --pattern fan --seconds 30
+  tools/dmx_test.py --pattern ilda --file 0 --color 255,255,255  # file colours, still
 """
 import argparse
 import math
@@ -21,6 +22,7 @@ PATTERNS = {
     "twinkle": 130,
     "wave": 150,
     "polygon": 170,
+    "ilda": 190,
 }
 
 
@@ -43,6 +45,7 @@ def main() -> None:
     ap.add_argument("--start", type=int, default=1, help="fixture start address (default: 1)")
     ap.add_argument("--pattern", choices=PATTERNS, default="tunnel")
     ap.add_argument("--beams", type=int, default=64, help="1..64; beams, dots, wave cycles or polygon sides per pattern")
+    ap.add_argument("--file", type=int, default=0, help="ILDA file index 0..255 for --pattern ilda")
     ap.add_argument("--color", default="40,255,80", help="R,G,B 0..255")
     ap.add_argument("--seconds", type=float, default=0, help="0 = until Ctrl-C")
     ap.add_argument("--rate", type=float, default=40, help="packets per second (default: 40)")
@@ -56,18 +59,19 @@ def main() -> None:
     try:
         while a.seconds <= 0 or time.monotonic() - t0 < a.seconds:
             t = time.monotonic() - t0
+            ilda = a.pattern == "ilda"  # hold the image still and full size
             universe = bytearray(512)
             ch = [
                 255,  # mode: on
                 PATTERNS[a.pattern],
-                200,  # size
-                150,  # rotation: clockwise, slow
-                int(128 + 60 * math.sin(t)),  # pan sweep
+                255 if ilda else 200,  # size
+                0 if ilda else 150,  # rotation: static / clockwise, slow
+                128 if ilda else int(128 + 60 * math.sin(t)),  # pan sweep
                 128,  # tilt centre
                 r, g, b,
                 255,  # dimmer
                 0,  # strobe open
-                beams,
+                a.file if ilda else beams,
                 120,  # animation speed
             ]
             universe[a.start - 1 : a.start - 1 + len(ch)] = bytes(ch)

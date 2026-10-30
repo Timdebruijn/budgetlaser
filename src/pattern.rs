@@ -18,6 +18,8 @@ pub struct Phases {
     /// Completed animation cycles; gives twinkle dots a new spot each cycle.
     pub anim_cycles: u32,
     pub strobe: f32,
+    /// ILDA playback position in frames.
+    pub clip_pos: f32,
 }
 
 impl Phases {
@@ -33,6 +35,16 @@ impl Phases {
             (self.strobe + p.strobe_hz * dt) % 1.0
         } else {
             0.0
+        };
+    }
+
+    /// Advances ILDA playback at `frame_rate`, scaled by channel 13 (128 = about 1x,
+    /// 255 = 2x); 0 holds the first frame. ILDA files carry no timing of their own.
+    pub fn tick_clip(&mut self, frames: usize, p: &Params, frame_rate: f32, dt: f32) {
+        self.clip_pos = if p.anim == 0.0 || frames == 0 {
+            0.0
+        } else {
+            (self.clip_pos + dt * p.anim * 2.0 * frame_rate) % frames as f32
         };
     }
 }
@@ -149,18 +161,24 @@ fn unit_shape(pattern: Pattern, beams: u32, ph: &Phases, animating: bool, out: &
                 out.push(Point::lit(breathe * a.cos(), breathe * a.sin(), white));
             }
         }
+        Pattern::Ilda => {} // build() copies the clip frame
     }
 }
 
-/// Builds the point-stream frame for one render frame.
-pub fn build(p: &Params, ph: &Phases, dimmer_gamma: f32, frame: &mut Frame) {
+/// Builds the point-stream frame for one render frame. `clip_frame` holds the
+/// current ILDA frame for Pattern::Ilda and is ignored otherwise.
+pub fn build(p: &Params, ph: &Phases, clip_frame: &[Point], dimmer_gamma: f32, frame: &mut Frame) {
     frame.points.clear();
     let Some(pattern) = p.pattern else { return };
     let strobe_open = p.strobe_hz == 0.0 || ph.strobe < 0.5;
     if !p.on || !strobe_open {
         return;
     }
-    unit_shape(pattern, p.beams, ph, p.anim > 0.0, &mut frame.points);
+    if pattern == Pattern::Ilda {
+        frame.points.extend_from_slice(clip_frame);
+    } else {
+        unit_shape(pattern, p.beams, ph, p.anim > 0.0, &mut frame.points);
+    }
     let gain = p.dimmer.powf(dimmer_gamma);
     let rgb = [p.rgb[0] * gain, p.rgb[1] * gain, p.rgb[2] * gain];
     let (s, c) = ph.angle.sin_cos();
@@ -197,7 +215,7 @@ mod tests {
         let mut ph = Phases::default();
         ph.tick(&p, 0.016);
         let mut f = Frame::default();
-        build(&p, &ph, 2.2, &mut f);
+        build(&p, &ph, &[], 2.2, &mut f);
         assert_eq!(f.points.len(), 2);
         // (-1,0) scaled 0.5, rotated 90° ccw -> (0,-0.5), shifted -> (0.25,-0.75)
         let a = f.points[0];
@@ -208,7 +226,7 @@ mod tests {
         assert_eq!((a.r, a.g, a.b), (1.0, 0.5, 0.0));
 
         let off = Params { on: false, ..p };
-        build(&off, &ph, 2.2, &mut f);
+        build(&off, &ph, &[], 2.2, &mut f);
         assert!(f.points.is_empty());
 
         let tunnel = Params {
@@ -216,7 +234,7 @@ mod tests {
             beams: 8,
             ..p
         };
-        build(&tunnel, &ph, 2.2, &mut f);
+        build(&tunnel, &ph, &[], 2.2, &mut f);
         assert_eq!(f.points.iter().filter(|q| !q.blank).count(), 8);
     }
 
@@ -273,6 +291,44 @@ mod tests {
                 .iter()
                 .all(|p| p.r == 1.0)
         );
+    }
+
+    #[test]
+    fn ilda_playback() {
+        let red = Point::lit(0.5, 0.5, [1.0, 0.0, 0.0]);
+        let frames = [vec![red; 3], vec![Point::blank(0.0, 0.0); 2]];
+        let mut p = Params {
+            anim: 0.5, // 1x
+            ..Params::default()
+        };
+        let mut ph = Phases::default();
+        let at = |ph: &mut Phases, p: &Params, dt| {
+            ph.tick_clip(frames.len(), p, 10.0, dt); // 10 fps
+            ph.clip_pos as usize
+        };
+        assert_eq!(at(&mut ph, &p, 0.05), 0);
+        assert_eq!(at(&mut ph, &p, 0.1), 1);
+        assert_eq!(at(&mut ph, &p, 0.1), 0); // looped
+        p.anim = 1.0; // 2x
+        assert_eq!(at(&mut ph, &p, 0.05), 1);
+        p.anim = 0.0;
+        assert_eq!(at(&mut ph, &p, 0.1), 0);
+        assert_eq!(ph.clip_pos, 0.0);
+
+        // File colours pass through, tinted by channels 7-9.
+        let p = Params {
+            on: true,
+            pattern: Some(Pattern::Ilda),
+            size: 1.0,
+            rgb: [0.5, 1.0, 1.0],
+            dimmer: 1.0,
+            ..Params::default()
+        };
+        let mut f = Frame::default();
+        build(&p, &ph, &frames[0][..1], 2.2, &mut f);
+        let q = f.points[0];
+        assert_eq!((f.points.len(), q.x, q.y), (1, 0.5, 0.5));
+        assert_eq!((q.r, q.g, q.b), (0.5, 0.0, 0.0));
     }
 
     #[test]
