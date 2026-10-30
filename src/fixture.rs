@@ -307,6 +307,7 @@ mod tests {
     fn beam_width_channel() {
         let mut ch = [0u8; 18];
         ch[13] = 7; // size fine in 18ch, beam width in 14ch
+        ch[16] = 9; // tilt fine, never beam width
         assert_eq!(decode(&ch[..13]).width, 1.0);
         assert_eq!(decode(&ch[..17]).width, 1.0);
         let w14 = decode(&ch[..14]);
