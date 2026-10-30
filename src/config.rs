@@ -256,6 +256,10 @@ mod tests {
         assert!(!check("start_address = 501"));
         assert!(check("start_address = 496\npersonality = \"17ch\""));
         assert!(!check("start_address = 497\npersonality = \"17ch\""));
+        assert!(check("start_address = 495\npersonality = \"18ch\""));
+        assert!(!check("start_address = 496\npersonality = \"18ch\""));
+        assert!(check("start_address = 499\npersonality = \"14ch\""));
+        assert!(!check("start_address = 500\npersonality = \"14ch\""));
     }
 
     #[test]

@@ -1,6 +1,6 @@
 struct Uniforms {
     res: vec2<f32>,         // internal render target size in px
-    half_width: f32,        // line half width in px
+    half_width: f32,        // configured line half width in px
     decay: f32,             // glow decay per frame (0 = off)
     exposure: f32,
     gamma_out: f32,         // 1 = apply gamma in shader (non-sRGB surface)
@@ -14,6 +14,7 @@ struct Seg {
     @location(0) p0: vec2<f32>,
     @location(1) p1: vec2<f32>,
     @location(2) rgb: vec3<f32>,
+    @location(3) width: f32,  // multiplier on half_width
 };
 
 struct LineOut {
@@ -22,6 +23,7 @@ struct LineOut {
     @location(1) a: vec2<f32>,
     @location(2) b: vec2<f32>,
     @location(3) rgb: vec3<f32>,
+    @location(4) hw: f32,
 };
 
 // Segments arrive in NDC of the whole target (zone mapping happens on the CPU).
@@ -36,7 +38,8 @@ fn vs_line(@builtin(vertex_index) vi: u32, s: Seg) -> LineOut {
     var d = b - a;
     if (dot(d, d) < 1e-6) { d = vec2<f32>(1.0, 0.0); } else { d = normalize(d); }
     let n = vec2<f32>(-d.y, d.x);
-    let r = u.half_width + 1.5;
+    let hw = max(u.half_width * s.width, 0.5);
+    let r = hw + 1.5;
     // quad corners: 0 = a-, 1 = a+, 2 = b-, 3 = b+; triangles (0,1,2) (2,1,3)
     let corner = array<u32, 6>(0u, 1u, 2u, 2u, 1u, 3u)[vi];
     let along = select(a - d * r, b + d * r, corner >= 2u);
@@ -48,6 +51,7 @@ fn vs_line(@builtin(vertex_index) vi: u32, s: Seg) -> LineOut {
     o.a = a;
     o.b = b;
     o.rgb = s.rgb;
+    o.hw = hw;
     return o;
 }
 
@@ -56,7 +60,7 @@ fn fs_line(i: LineOut) -> @location(0) vec4<f32> {
     let ab = i.b - i.a;
     let t = clamp(dot(i.px - i.a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
     let dist = length(i.px - (i.a + ab * t));
-    let cov = 1.0 - smoothstep(u.half_width - 0.75, u.half_width + 0.75, dist);
+    let cov = 1.0 - smoothstep(i.hw - 0.75, i.hw + 0.75, dist);
     return vec4<f32>(i.rgb * cov, 1.0);
 }
 

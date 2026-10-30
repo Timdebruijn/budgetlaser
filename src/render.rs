@@ -189,7 +189,7 @@ impl Renderer {
         let seg_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Segment>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x3],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x3, 3 => Float32],
         };
         let pipeline =
             |label, vs, fs, buffers: &[Option<wgpu::VertexBufferLayout>], layout, format, blend| {
@@ -323,7 +323,7 @@ impl Renderer {
             0,
             bytemuck::bytes_of(&Uniforms {
                 res: [w, h],
-                half_width: (self.cfg.line_width_px * self.cfg.internal_scale * 0.5).max(0.5),
+                half_width: self.cfg.line_width_px * self.cfg.internal_scale * 0.5,
                 decay: if self.cfg.glow && !self.first {
                     self.cfg.glow_decay
                 } else {

@@ -1,25 +1,32 @@
-//! Fixture profiles (13-channel and 16-bit 17-channel), plus smoothing.
+//! Fixture profiles (13 and 17 channels, each with or without a beam width channel), plus
+//! smoothing.
 
 use serde::Deserialize;
 use std::f32::consts::TAU;
 
-/// Channel layout. The 17-channel personality keeps 1-13 identical and appends
-/// fine channels 14-17 for size, rotation, pan and tilt, so console programming
-/// for the 13-channel mode keeps working.
+/// Channel layout. Every personality keeps 1-13 identical, so console programming for
+/// the 13-channel mode keeps working. 17ch appends fine channels 14-17 for size,
+/// rotation, pan and tilt; 14ch and 18ch append beam width to 13ch and 17ch.
 #[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Personality {
     #[default]
     #[serde(rename = "13ch")]
     Standard,
+    #[serde(rename = "14ch")]
+    Width,
     #[serde(rename = "17ch")]
     Fine,
+    #[serde(rename = "18ch")]
+    FineWidth,
 }
 
 impl Personality {
     pub fn footprint(self) -> usize {
         match self {
             Personality::Standard => 13,
+            Personality::Width => 14,
             Personality::Fine => 17,
+            Personality::FineWidth => 18,
         }
     }
 }
@@ -71,6 +78,8 @@ pub struct Params {
     pub file: u8,
     /// 0..1
     pub anim: f32,
+    /// Multiplier on `output.line_width_px`.
+    pub width: f32,
 }
 
 impl Default for Params {
@@ -88,6 +97,7 @@ impl Default for Params {
             beams: 1,
             file: 0,
             anim: 0.0,
+            width: 1.0,
         }
     }
 }
@@ -102,10 +112,24 @@ fn unit16(coarse: u8, fine: u8) -> f32 {
     ((coarse as f32 + fine as f32 / 256.0) / 255.0).min(1.0)
 }
 
-/// Decode one fixture; `ch` is its footprint (13 or 17 bytes).
+/// Beam width channel: 0 keeps the configured line width, 1-255 scale it
+/// exponentially from 0.5x to 8x (about 64 = 1x).
+fn beam_width(v: u8) -> f32 {
+    match v {
+        0 => 1.0,
+        v => 0.5 * 16f32.powf((v - 1) as f32 / 254.0),
+    }
+}
+
+/// Decode one fixture; `ch` is its footprint (13, 14, 17 or 18 bytes).
 pub fn decode(ch: &[u8]) -> Params {
-    // Fine channels 14-17: size, rotation, pan, tilt. Zero in the 13-channel mode.
-    let fine = |i: usize| ch.get(13 + i).copied().unwrap_or(0);
+    // Fine channels 14-17: size, rotation, pan, tilt. Zero without them.
+    let fine = |i: usize| if ch.len() >= 17 { ch[13 + i] } else { 0 };
+    // Beam width is the last channel of the 14- and 18-channel modes.
+    let width = match ch.len() {
+        14 | 18 => beam_width(ch[ch.len() - 1]),
+        _ => 1.0,
+    };
     let pattern = match ch[1] {
         0..=19 => Some(Pattern::Dot),
         20..=39 => Some(Pattern::Line),
@@ -143,6 +167,7 @@ pub fn decode(ch: &[u8]) -> Params {
         beams: 1 + (unit(ch[11]) * (MAX_BEAMS - 1) as f32).round() as u32,
         file: ch[11],
         anim: unit(ch[12]),
+        width,
     }
 }
 
@@ -198,6 +223,7 @@ impl Smoother {
             size: lerp(a.size, b.size, t),
             pan: lerp(a.pan, b.pan, t),
             tilt: lerp(a.tilt, b.tilt, t),
+            width: lerp(a.width, b.width, t),
             rotation,
             ..*b
         }
@@ -275,6 +301,27 @@ mod tests {
         ch[2] = 255;
         ch[13] = 255;
         assert_eq!(decode(&ch).size, 1.0);
+    }
+
+    #[test]
+    fn beam_width_channel() {
+        let mut ch = [0u8; 18];
+        ch[13] = 7; // size fine in 18ch, beam width in 14ch
+        assert_eq!(decode(&ch[..13]).width, 1.0);
+        assert_eq!(decode(&ch[..17]).width, 1.0);
+        let w14 = decode(&ch[..14]);
+        assert_eq!(
+            w14.size,
+            decode(&ch[..13]).size,
+            "14ch has no fine channels"
+        );
+        assert!((w14.width - beam_width(7)).abs() < 1e-6);
+        assert_eq!(decode(&ch).width, 1.0, "18ch width 0 keeps the config");
+        for (v, want) in [(1, 0.5), (255, 8.0)] {
+            ch[17] = v;
+            assert!((decode(&ch).width - want).abs() < 1e-4, "ch 18 = {v}");
+        }
+        assert!((beam_width(64) - 1.0).abs() < 0.02);
     }
 
     #[test]
