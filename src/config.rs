@@ -162,7 +162,13 @@ impl Input {
 pub fn load(path: &str) -> Result<Config, String> {
     match std::fs::read_to_string(path) {
         Ok(s) => toml::from_str::<Config>(&s)
-            .map_err(|e| e.to_string())
+            .map_err(|e| {
+                let mut e = e.to_string();
+                if e.contains("unknown field `start_address`") {
+                    e.push_str("\nstart_address moved to [[fixture]] blocks, see budgetlaser.toml");
+                }
+                e
+            })
             .and_then(Config::validate)
             .map_err(|e| format!("{path}: {e}")),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
