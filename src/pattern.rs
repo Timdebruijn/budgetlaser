@@ -39,7 +39,9 @@ impl Phases {
 
 /// Deterministic pseudo-random value in -1..1 for (index, generation, axis).
 fn hash_signed(i: u32, generation: u32, axis: u32) -> f32 {
-    let mut h = i.wrapping_mul(0x9E37_79B1)
+    // Seeded so that (0, 0, 0) does not hash to 0, which would pin dot 0 to the edge.
+    let mut h = 0x6A09_E667
+        ^ i.wrapping_mul(0x9E37_79B1)
         ^ generation.wrapping_mul(0x85EB_CA77)
         ^ axis.wrapping_mul(0xC2B2_AE3D);
     h ^= h >> 15;
@@ -139,8 +141,9 @@ fn unit_shape(pattern: Pattern, beams: u32, ph: &Phases, animating: bool, out: &
             }
         }
         Pattern::Polygon => {
-            // Closed outline, point up; channel 12 sets 3..12 sides.
-            let sides = beams.clamp(3, MAX_POLYGON_SIDES);
+            // Closed outline, point up; channel 12 spreads 3..12 sides over its range.
+            let sides =
+                3 + ((beams - 1) as f32 / 63.0 * (MAX_POLYGON_SIDES - 3) as f32).round() as u32;
             for i in 0..=sides {
                 let a = PI / 2.0 + i as f32 / sides as f32 * TAU;
                 out.push(Point::lit(breathe * a.cos(), breathe * a.sin(), white));
@@ -238,11 +241,12 @@ mod tests {
         assert_eq!(lit(&shape(Pattern::Grid, 1, &still, false))[0].x, 0.0);
         assert_eq!(lit(&shape(Pattern::Grid, 4, &still, false))[0].x, -1.0);
 
-        // Polygon: closed outline, sides clamped to 3..12.
+        // Polygon: closed outline, 3..12 sides spread over the beam range.
         let tri = shape(Pattern::Polygon, 1, &still, false);
         assert_eq!(tri.len(), 4);
         assert!((tri[0].x - tri[3].x).abs() < 1e-5 && (tri[0].y - tri[3].y).abs() < 1e-5);
         assert_eq!(shape(Pattern::Polygon, 64, &still, false).len(), 13);
+        assert_eq!(shape(Pattern::Polygon, 32, &still, false).len(), 8);
 
         // Wave: one continuous line across the field, amplitude 0.5.
         let wave = shape(Pattern::Wave, 64, &still, false);
@@ -258,6 +262,8 @@ mod tests {
         let a = lit(&shape(Pattern::Twinkle, 20, &ph, true));
         assert_eq!(a.len(), 20);
         assert!(a.iter().all(|p| in_field(p) && (0.0..=1.0).contains(&p.r)));
+        assert!(a.iter().all(|p| p.x.abs() < 1.0));
+        ph.anim = 0.15;
         assert_eq!(a[0].x, lit(&shape(Pattern::Twinkle, 20, &ph, true))[0].x);
         ph.anim_cycles += 1;
         assert_ne!(a[0].x, lit(&shape(Pattern::Twinkle, 20, &ph, true))[0].x);
