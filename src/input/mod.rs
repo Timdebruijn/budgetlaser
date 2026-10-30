@@ -103,9 +103,19 @@ struct Merger {
 }
 
 impl Merger {
-    fn publish(&mut self, now: Instant) {
+    /// Drops silent senders; true if any went.
+    fn expire(&mut self, now: Instant) -> bool {
+        let before = self.slots.len();
         self.slots
             .retain(|s| now.duration_since(s.seen) <= s.id.timeout());
+        if self.slots.len() < MAX_SENDERS {
+            self.full_warned = false;
+        }
+        self.slots.len() != before
+    }
+
+    fn publish(&mut self, now: Instant) {
+        self.expire(now);
         if merge(&self.slots, now, self.out.input_buffer_mut()) {
             self.out.publish();
         }
@@ -121,6 +131,7 @@ impl Sink {
     pub fn send(&self, id: SenderId, priority: u8, data: &[u8]) {
         let now = Instant::now();
         let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        m.expire(now);
         let slot = match m.slots.iter().position(|s| s.id == id) {
             Some(i) => &mut m.slots[i],
             None if m.slots.len() >= MAX_SENDERS => {
@@ -147,6 +158,16 @@ impl Sink {
         slot.priority = priority;
         slot.seen = now;
         m.publish(now);
+    }
+
+    /// Re-merges when a sender timed out, so a lower-priority sender takes over without
+    /// waiting for its own next packet. Called periodically by the input ticker.
+    pub fn tick(&self) {
+        let now = Instant::now();
+        let mut m = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if m.expire(now) {
+            m.publish(now);
+        }
     }
 
     /// Sender announced it stops (sACN stream terminated): drop it right away.
@@ -239,6 +260,29 @@ mod tests {
         assert_eq!(u[..2], [3, 0]);
         sink.stop(b);
         assert_eq!(rx.latest().1[..2], [10, 10]);
+        // Senders that went silent free their slot for new ones, and tick() falls back
+        // to the remaining sender without waiting for its next packet.
+        for i in 0..MAX_SENDERS as u8 {
+            sink.send(SenderId::Sacn([i + 10; 16]), 200, &[99]);
+        }
+        let long_ago = Instant::now() - Duration::from_secs(20);
+        for s in &mut sink.0.lock().unwrap().slots {
+            if s.id != a {
+                s.seen = long_ago;
+            }
+        }
+        sink.tick();
+        assert_eq!(
+            rx.latest(),
+            (true, &{
+                let mut u = [0; 512];
+                u[..2].copy_from_slice(&[10, 10]);
+                u
+            })
+        );
+        let c = SenderId::Sacn([3; 16]);
+        sink.send(c, 150, &[42]);
+        assert_eq!(rx.latest().1[0], 42);
         assert_eq!(
             SenderId::Sacn([0xab; 16]).to_string(),
             "sACN abababab-abab-abab-abab-abababababab"

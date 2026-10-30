@@ -270,6 +270,15 @@ fn main() {
             })
             .expect("spawn input thread");
     }
+    std::thread::Builder::new()
+        .name("dmx-tick".into())
+        .spawn(move || {
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(250));
+                sink.tick();
+            }
+        })
+        .expect("spawn input ticker");
 
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);

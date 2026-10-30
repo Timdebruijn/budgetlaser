@@ -34,15 +34,17 @@ pub fn parse(pkt: &[u8]) -> Option<Packet<'_>> {
         terminated: options & 0x40 != 0,
         data: &[],
     };
+    let count = u16::from_be_bytes([pkt[123], pkt[124]]) as usize; // includes start code
+    if count == 0 || pkt[125] != 0 {
+        // Start code 0 only (0xDD per-address priority is not supported). Termination is
+        // per start code, so a terminated 0xDD stream must not drop the sender either.
+        return None;
+    }
     if p.terminated {
         return Some(p);
     }
     if options & 0x80 != 0 {
         return None; // preview data, not for live output
-    }
-    let count = u16::from_be_bytes([pkt[123], pkt[124]]) as usize; // includes start code
-    if count == 0 || pkt[125] != 0 {
-        return None; // start code 0 only (0xDD per-address priority is not supported)
     }
     p.data = pkt.get(126..126 + (count - 1).min(512))?;
     Some(p)
@@ -107,6 +109,8 @@ mod tests {
         assert!(parse(&preview).is_none());
         let mut s = p.clone();
         s[125] = 0xdd;
+        assert!(parse(&s).is_none());
+        s[112] = 0x40; // terminating the 0xDD stream leaves the sender alone
         assert!(parse(&s).is_none());
     }
 }

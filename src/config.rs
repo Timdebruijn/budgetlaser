@@ -31,7 +31,7 @@ impl Default for Fixture {
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Source {
     Artnet,
@@ -96,6 +96,7 @@ impl Default for Config {
 impl Config {
     fn validate(mut self) -> Result<Self, String> {
         let i = &mut self.input;
+        i.sources.sort_unstable();
         i.sources.dedup();
         if i.sources.is_empty() {
             return Err("input.sources must name at least one source".into());
