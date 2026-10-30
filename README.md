@@ -40,8 +40,9 @@ universe. `personality = "17ch"` adds fine channels 14-17 for size, rotation, pa
 is a fraction of one coarse step. Rotation fine only applies to the static-angle range.
 
 **Console fixture definition.** [fixtures/BudgetLaser-Beamer-Laser.qxf](fixtures/BudgetLaser-Beamer-Laser.qxf)
-describes the 13-channel mode for QLC+ (4.14 and 5.x share the format). Copy it into the QLC+
-user fixture folder and restart QLC+; it then appears under manufacturer BudgetLaser:
+describes both modes (13 and 17 channel) for QLC+ (4.14 and 5.x share the format). Copy it
+into the QLC+ user fixture folder and restart QLC+; it then appears under manufacturer
+BudgetLaser:
 
 - macOS: `~/Library/Application Support/QLC+/Fixtures`
 - Linux: `~/.qlcplus/fixtures`

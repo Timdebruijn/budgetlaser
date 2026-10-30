@@ -21,7 +21,11 @@
   <Capability Min="40" Max="59">Circle / cone</Capability>
   <Capability Min="60" Max="79">Fan</Capability>
   <Capability Min="80" Max="99">Tunnel</Capability>
-  <Capability Min="100" Max="255">Reserved</Capability>
+  <Capability Min="100" Max="119">Grid</Capability>
+  <Capability Min="120" Max="139">Twinkle</Capability>
+  <Capability Min="140" Max="159">Wave</Capability>
+  <Capability Min="160" Max="179">Polygon</Capability>
+  <Capability Min="180" Max="255">Reserved</Capability>
  </Channel>
  <Channel Name="Size" Default="255" Preset="BeamZoomSmallBig"/>
  <Channel Name="Rotation">
@@ -43,13 +47,20 @@
  </Channel>
  <Channel Name="Beams">
   <Group Byte="0">Effect</Group>
-  <Capability Min="0" Max="255">Number of beams 1-64 (fan, tunnel)</Capability>
+  <Capability Min="0" Max="255">Beams 1-64 (fan, tunnel, twinkle), grid 1x1-8x8, wave 1-8 cycles, polygon 3-12 sides</Capability>
  </Channel>
  <Channel Name="Animation speed">
   <Group Byte="0">Speed</Group>
   <Capability Min="0" Max="0">Static</Capability>
   <Capability Min="1" Max="255" Preset="SlowToFast">Animation slow to fast</Capability>
  </Channel>
+ <Channel Name="Size fine" Preset="BeamZoomFine"/>
+ <Channel Name="Rotation fine">
+  <Group Byte="1">Effect</Group>
+  <Capability Min="0" Max="255">Static angle fine (no effect while rotating)</Capability>
+ </Channel>
+ <Channel Name="Pan fine" Preset="PositionPanFine"/>
+ <Channel Name="Tilt fine" Preset="PositionTiltFine"/>
  <Mode Name="13 Channel">
   <Channel Number="0">Mode</Channel>
   <Channel Number="1">Pattern</Channel>
@@ -64,6 +75,25 @@
   <Channel Number="10">Strobe</Channel>
   <Channel Number="11">Beams</Channel>
   <Channel Number="12">Animation speed</Channel>
+ </Mode>
+ <Mode Name="17 Channel">
+  <Channel Number="0">Mode</Channel>
+  <Channel Number="1">Pattern</Channel>
+  <Channel Number="2">Size</Channel>
+  <Channel Number="3">Rotation</Channel>
+  <Channel Number="4">Pan</Channel>
+  <Channel Number="5">Tilt</Channel>
+  <Channel Number="6">Red</Channel>
+  <Channel Number="7">Green</Channel>
+  <Channel Number="8">Blue</Channel>
+  <Channel Number="9">Dimmer</Channel>
+  <Channel Number="10">Strobe</Channel>
+  <Channel Number="11">Beams</Channel>
+  <Channel Number="12">Animation speed</Channel>
+  <Channel Number="13">Size fine</Channel>
+  <Channel Number="14">Rotation fine</Channel>
+  <Channel Number="15">Pan fine</Channel>
+  <Channel Number="16">Tilt fine</Channel>
  </Mode>
  <Physical>
   <Bulb Type="Projector" Lumens="0" ColourTemperature="0"/>
