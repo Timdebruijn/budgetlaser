@@ -42,6 +42,22 @@ Pan and tilt use QLC+'s position presets, so the EFX editor can move the pattern
 physical data (30 degrees pan/tilt, 1-30 degrees zoom) is nominal: the real angles depend
 on the projector's throw.
 
+Patterns on channel 2. Channel 12 (beams) and channel 13 (animation speed) mean
+something per pattern:
+
+| Ch 2 | Pattern | Channel 12 | Animation |
+|---|---|---|---|
+| 0-19 | Dot | - | - |
+| 20-39 | Line | - | sweeps around the centre |
+| 40-59 | Circle / cone | - | radius breathes |
+| 60-79 | Fan | 1-64 beams | fan opens and closes |
+| 80-99 | Tunnel | 1-64 beams | radius breathes |
+| 100-119 | Grid | lattice of 1x1 to 8x8 beams | spacing breathes |
+| 120-139 | Twinkle | 1-64 dots | dots fade in and out, then move |
+| 140-159 | Wave | 1-8 cycles | wave travels |
+| 160-179 | Polygon | 3-12 sides | outline breathes |
+| 180-255 | reserved | | |
+
 Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
 
 ## Output

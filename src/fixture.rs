@@ -35,6 +35,10 @@ pub enum Pattern {
     Circle,
     Fan,
     Tunnel,
+    Grid,
+    Twinkle,
+    Wave,
+    Polygon,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -103,6 +107,10 @@ pub fn decode(ch: &[u8]) -> Params {
         40..=59 => Some(Pattern::Circle),
         60..=79 => Some(Pattern::Fan),
         80..=99 => Some(Pattern::Tunnel),
+        100..=119 => Some(Pattern::Grid),
+        120..=139 => Some(Pattern::Twinkle),
+        140..=159 => Some(Pattern::Wave),
+        160..=179 => Some(Pattern::Polygon),
         _ => None, // reserved
     };
     let rotation = match ch[3] {
@@ -209,6 +217,17 @@ mod tests {
         let p = decode(&ch);
         assert!(p.on);
         assert_eq!(p.pattern, Some(Pattern::Fan));
+        for (v, want) in [
+            (110, Some(Pattern::Grid)),
+            (120, Some(Pattern::Twinkle)),
+            (159, Some(Pattern::Wave)),
+            (179, Some(Pattern::Polygon)),
+            (180, None),
+        ] {
+            let mut c = ch;
+            c[1] = v;
+            assert_eq!(decode(&c).pattern, want, "channel 2 = {v}");
+        }
         assert_eq!(p.size, 1.0);
         assert_eq!(p.rotation, Rotation::Spin(MAX_SPIN_RAD_S));
         assert_eq!((p.pan, p.tilt), (-1.0, 1.0));
@@ -217,7 +236,7 @@ mod tests {
         ch[3] = 128;
         assert_eq!(decode(&ch).rotation, Rotation::Spin(-MAX_SPIN_RAD_S / 64.0));
         ch[0] = 9;
-        ch[1] = 100;
+        ch[1] = 180; // reserved
         ch[10] = 0;
         ch[11] = 0;
         let p = decode(&ch);
