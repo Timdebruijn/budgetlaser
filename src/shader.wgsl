@@ -1,10 +1,10 @@
 struct Uniforms {
-    scale: vec2<f32>,       // scan field (-1..1) -> NDC
     res: vec2<f32>,         // internal render target size in px
     half_width: f32,        // line half width in px
     decay: f32,             // glow decay per frame (0 = off)
     exposure: f32,
     gamma_out: f32,         // 1 = apply gamma in shader (non-sRGB surface)
+    _pad: vec2<f32>,
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -24,8 +24,9 @@ struct LineOut {
     @location(3) rgb: vec3<f32>,
 };
 
+// Segments arrive in NDC of the whole target (zone mapping happens on the CPU).
 fn to_px(p: vec2<f32>) -> vec2<f32> {
-    return (p * u.scale * 0.5 + 0.5) * u.res;
+    return (p * 0.5 + 0.5) * u.res;
 }
 
 @vertex

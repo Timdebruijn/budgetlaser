@@ -14,15 +14,23 @@ use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::keyboard::{Key, NamedKey};
 use winit::window::{Fullscreen, Window, WindowId};
 
+/// Per-fixture render state.
+struct Fixture {
+    cfg: config::Fixture,
+    smoother: fixture::Smoother,
+    phases: pattern::Phases,
+}
+
 struct App {
     cfg: Config,
     dmx: input::Receiver,
     window: Option<Arc<Window>>,
     renderer: Option<render::Renderer>,
-    smoother: fixture::Smoother,
-    phases: pattern::Phases,
+    fixtures: Vec<Fixture>,
     frame: point::Frame,
     segments: Vec<point::Segment>,
+    scratch: Vec<point::Segment>,
+    batches: Vec<render::Batch>,
     start: Instant,
     last_tick: f64,
     last_dmx: Option<f64>,
@@ -93,13 +101,13 @@ impl App {
 
         let (fresh, universe) = self.dmx.latest();
         if fresh {
-            let a = self.cfg.input.start_address as usize - 1;
-            let n = self.cfg.input.personality.footprint();
-            self.smoother
-                .push(fixture::decode(&universe[a..a + n]), now);
+            for f in &mut self.fixtures {
+                let a = f.cfg.start_address as usize - 1;
+                let n = f.cfg.personality.footprint();
+                f.smoother.push(fixture::decode(&universe[a..a + n]), now);
+            }
             self.last_dmx = Some(now);
         }
-        let mut params = self.smoother.sample(now);
         let ok = self
             .last_dmx
             .is_some_and(|t| now - t <= self.cfg.input.signal_timeout_s);
@@ -111,21 +119,32 @@ impl App {
                 (false, SignalLoss::Hold) => log::warn!("DMX signal lost, holding last state"),
             }
         }
-        if !ok && self.cfg.input.signal_loss == SignalLoss::Blackout {
-            params.on = false;
+        let blackout = !ok && self.cfg.input.signal_loss == SignalLoss::Blackout;
+
+        self.segments.clear();
+        self.batches.clear();
+        for f in &mut self.fixtures {
+            let mut params = f.smoother.sample(now);
+            params.on &= !blackout;
+            f.phases.tick(&params, dt);
+            pattern::build(
+                &params,
+                &f.phases,
+                self.cfg.output.dimmer_gamma,
+                &mut self.frame,
+            );
+            point::segments(&self.frame.points, &mut self.scratch);
+            let start = self.segments.len();
+            self.segments.extend_from_slice(&self.scratch);
+            self.batches.push(render::Batch {
+                range: start..self.segments.len(),
+                zone: f.cfg.zone,
+            });
         }
-        self.phases.tick(&params, dt);
-        pattern::build(
-            &params,
-            &self.phases,
-            self.cfg.output.dimmer_gamma,
-            &mut self.frame,
-        );
-        point::segments(&self.frame.points, &mut self.segments);
         let presented = self
             .renderer
             .as_mut()
-            .is_some_and(|r| r.render(&self.segments));
+            .is_some_and(|r| r.render(&self.segments, &self.batches));
 
         // Hidden frames sleep instead of waiting for vsync; they say nothing about pacing.
         if !presented {
@@ -253,14 +272,23 @@ fn main() {
     let event_loop = EventLoop::new().expect("event loop");
     event_loop.set_control_flow(ControlFlow::Poll);
     let mut app = App {
-        cfg,
+        cfg: cfg.clone(),
         dmx: receiver,
         window: None,
         renderer: None,
-        smoother: fixture::Smoother::new(),
-        phases: pattern::Phases::default(),
+        fixtures: cfg
+            .fixtures
+            .iter()
+            .map(|f| Fixture {
+                cfg: f.clone(),
+                smoother: fixture::Smoother::new(),
+                phases: pattern::Phases::default(),
+            })
+            .collect(),
         frame: point::Frame::default(),
         segments: Vec::new(),
+        scratch: Vec::new(),
+        batches: Vec::new(),
         start: Instant::now(),
         last_tick: 0.0,
         last_dmx: None,
