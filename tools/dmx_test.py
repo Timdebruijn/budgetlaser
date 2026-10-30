@@ -38,6 +38,13 @@ def artdmx(universe: int, seq: int, data: bytes) -> bytes:
     )
 
 
+def dmx_value(v: str) -> int:
+    n = int(v)
+    if not 0 <= n <= 255:
+        raise argparse.ArgumentTypeError(f"{n} is not 0..255")
+    return n
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="127.0.0.1", help="target IP (default: 127.0.0.1)")
@@ -45,7 +52,7 @@ def main() -> None:
     ap.add_argument("--start", type=int, default=1, help="fixture start address (default: 1)")
     ap.add_argument("--pattern", choices=PATTERNS, default="tunnel")
     ap.add_argument("--beams", type=int, default=64, help="1..64; beams, dots, wave cycles or polygon sides per pattern")
-    ap.add_argument("--file", type=int, default=0, help="ILDA file index 0..255 for --pattern ilda")
+    ap.add_argument("--file", type=dmx_value, default=0, help="ILDA file index 0..255 for --pattern ilda")
     ap.add_argument("--color", default="40,255,80", help="R,G,B 0..255")
     ap.add_argument("--seconds", type=float, default=0, help="0 = until Ctrl-C")
     ap.add_argument("--rate", type=float, default=40, help="packets per second (default: 40)")
@@ -59,7 +66,7 @@ def main() -> None:
     try:
         while a.seconds <= 0 or time.monotonic() - t0 < a.seconds:
             t = time.monotonic() - t0
-            ilda = a.pattern == "ilda"  # hold the image still and full size
+            ilda = a.pattern == "ilda"  # full size, no rotation or pan sweep; plays at 1x
             universe = bytearray(512)
             ch = [
                 255,  # mode: on
@@ -72,7 +79,7 @@ def main() -> None:
                 255,  # dimmer
                 0,  # strobe open
                 a.file if ilda else beams,
-                120,  # animation speed
+                128 if ilda else 120,  # animation speed (ILDA: 1x frame_rate)
             ]
             universe[a.start - 1 : a.start - 1 + len(ch)] = bytes(ch)
             sock.sendto(artdmx(a.universe, seq, bytes(universe)), (a.host, 6454))

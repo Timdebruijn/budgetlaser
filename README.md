@@ -114,8 +114,10 @@ Target: Raspberry Pi OS Lite (trixie), no desktop. BudgetLaser runs fullscreen i
    ```
 
    This installs `cage`, creates the `budgetlaser` user (in `dialout` for the USB Pro),
-   installs the binary, config, PAM file and `budgetlaser.service`, and starts it. The
-   service replaces the login prompt on tty1; use SSH to manage the Pi.
+   installs the binary, config, PAM file and `budgetlaser.service`, creates
+   `/etc/budgetlaser/ilda` for .ild files, and starts it. The service replaces the login
+   prompt on tty1; use SSH to manage the Pi. After adding .ild files, run
+   `sudo systemctl restart budgetlaser`.
 3. Logs: `journalctl -u budgetlaser -f`.
 
 **Measuring the v0.1 gate** (1080p60 with glow, stable): set the beamer to 1080p60, keep

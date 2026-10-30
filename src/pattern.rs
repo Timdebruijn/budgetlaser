@@ -18,8 +18,9 @@ pub struct Phases {
     /// Completed animation cycles; gives twinkle dots a new spot each cycle.
     pub anim_cycles: u32,
     pub strobe: f32,
-    /// ILDA playback position in frames.
+    /// ILDA playback position in frames, and the file it belongs to.
     pub clip_pos: f32,
+    pub clip_file: u8,
 }
 
 impl Phases {
@@ -40,8 +41,11 @@ impl Phases {
 
     /// Advances ILDA playback at `frame_rate`, scaled by channel 13 (128 = about 1x,
     /// 255 = 2x); 0 holds the first frame. ILDA files carry no timing of their own.
+    /// Selecting another file starts it from its first frame.
     pub fn tick_clip(&mut self, frames: usize, p: &Params, frame_rate: f32, dt: f32) {
-        self.clip_pos = if p.anim == 0.0 || frames == 0 {
+        let new_file = p.file != self.clip_file;
+        self.clip_file = p.file;
+        self.clip_pos = if p.anim == 0.0 || frames == 0 || new_file {
             0.0
         } else {
             (self.clip_pos + dt * p.anim * 2.0 * frame_rate) % frames as f32
@@ -310,6 +314,9 @@ mod tests {
         assert_eq!(at(&mut ph, &p, 0.1), 1);
         assert_eq!(at(&mut ph, &p, 0.1), 0); // looped
         p.anim = 1.0; // 2x
+        assert_eq!(at(&mut ph, &p, 0.05), 1);
+        p.file = 1; // another file starts at its first frame
+        assert_eq!(at(&mut ph, &p, 0.01), 0);
         assert_eq!(at(&mut ph, &p, 0.05), 1);
         p.anim = 0.0;
         assert_eq!(at(&mut ph, &p, 0.1), 0);

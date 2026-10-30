@@ -25,6 +25,7 @@ if [ -n "$CONF" ]; then
 elif [ ! -f /etc/budgetlaser/budgetlaser.toml ]; then
     install -Dm644 "$HERE/../budgetlaser.toml" /etc/budgetlaser/budgetlaser.toml
 fi
+install -d -m755 /etc/budgetlaser/ilda
 install -Dm644 "$HERE/pam.d/budgetlaser" /etc/pam.d/budgetlaser
 install -Dm644 "$HERE/budgetlaser.service" /etc/systemd/system/budgetlaser.service
 
