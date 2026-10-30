@@ -156,20 +156,21 @@ impl ApplicationHandler for App {
                 m.refresh_rate_millihertz().unwrap_or(0)
             );
         }
+        let monitor = monitors
+            .get(self.cfg.output.monitor)
+            .or(monitors.first())
+            .cloned();
         let mut attrs = Window::default_attributes().with_title("BudgetLaser");
         if self.cfg.output.fullscreen {
-            let m = monitors
-                .get(self.cfg.output.monitor)
-                .or(monitors.first())
-                .cloned();
-            attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(m)));
+            attrs = attrs.with_fullscreen(Some(Fullscreen::Borderless(monitor.clone())));
         } else {
             attrs = attrs.with_inner_size(winit::dpi::LogicalSize::new(960.0, 540.0));
         }
         let window = Arc::new(event_loop.create_window(attrs).expect("create window"));
         window.set_cursor_visible(!self.cfg.output.fullscreen);
-        let refresh_hz = window
-            .current_monitor()
+        // Wayland only reports current_monitor() after the surface enters an output,
+        // so use the monitor chosen for fullscreen.
+        let refresh_hz = monitor
             .and_then(|m| m.refresh_rate_millihertz())
             .map_or(60.0, |mhz| mhz as f64 / 1000.0);
         log::info!("display refresh {refresh_hz:.2} Hz");

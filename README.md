@@ -55,7 +55,8 @@ Target: Raspberry Pi OS Lite (trixie), no desktop. BudgetLaser runs fullscreen i
 
    The binary lands in `target/aarch64-linux/release/budgetlaser`. It is built against
    glibc 2.36 (bookworm) and runs on both bookworm and trixie.
-2. Copy the binary and the `deploy/` directory to the Pi, then run as root:
+2. Copy the binary, `budgetlaser.toml` and the `deploy/` directory to the Pi, then run as
+   root (without a config argument the default `budgetlaser.toml` is installed once):
 
    ```bash
    sudo deploy/install.sh ./budgetlaser my-config.toml
