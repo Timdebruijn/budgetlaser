@@ -27,6 +27,18 @@ Log level via `RUST_LOG` (`debug` prints fps every 5 s).
 Fixture: 13 channels from `start_address` (mode, pattern, size, rotation, pan, tilt, R, G, B,
 dimmer, strobe, beam count, animation speed), as specified in the design document.
 
+**Console fixture definition.** [fixtures/BudgetLaser-Beamer-Laser.qxf](fixtures/BudgetLaser-Beamer-Laser.qxf)
+describes the 13-channel mode for QLC+ (4.14 and 5.x share the format). Copy it into the QLC+
+user fixture folder and restart QLC+; it then appears under manufacturer BudgetLaser:
+
+- macOS: `~/Library/Application Support/QLC+/Fixtures`
+- Linux: `~/.qlcplus/fixtures`
+- Windows: `%UserProfile%\QLC+\Fixtures`
+
+Pan and tilt use QLC+'s position presets, so the EFX editor can move the pattern. The
+physical data (30 degrees pan/tilt, 1-30 degrees zoom) is nominal: the real angles depend
+on the projector's throw.
+
 Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
 
 ## Output

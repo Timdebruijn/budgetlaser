@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE FixtureDefinition>
+<FixtureDefinition xmlns="http://www.qlcplus.org/FixtureDefinition">
+ <Creator>
+  <Name>Q Light Controller Plus</Name>
+  <Version>5.3.0</Version>
+  <Author>Tim de Bruijn</Author>
+ </Creator>
+ <Manufacturer>BudgetLaser</Manufacturer>
+ <Model>Beamer Laser</Model>
+ <Type>Laser</Type>
+ <Channel Name="Mode">
+  <Group Byte="0">Shutter</Group>
+  <Capability Min="0" Max="9" Preset="ShutterClose">Blackout</Capability>
+  <Capability Min="10" Max="255" Preset="ShutterOpen">DMX mode</Capability>
+ </Channel>
+ <Channel Name="Pattern">
+  <Group Byte="0">Effect</Group>
+  <Capability Min="0" Max="19">Dot</Capability>
+  <Capability Min="20" Max="39">Line</Capability>
+  <Capability Min="40" Max="59">Circle / cone</Capability>
+  <Capability Min="60" Max="79">Fan</Capability>
+  <Capability Min="80" Max="99">Tunnel</Capability>
+  <Capability Min="100" Max="255">Reserved</Capability>
+ </Channel>
+ <Channel Name="Size" Default="255" Preset="BeamZoomSmallBig"/>
+ <Channel Name="Rotation">
+  <Group Byte="0">Effect</Group>
+  <Capability Min="0" Max="127" Preset="RotationIndexed">Static angle 0-360°</Capability>
+  <Capability Min="128" Max="191" Preset="RotationClockwiseSlowToFast">Rotate clockwise slow to fast</Capability>
+  <Capability Min="192" Max="255" Preset="RotationCounterClockwiseSlowToFast">Rotate counter-clockwise slow to fast</Capability>
+ </Channel>
+ <Channel Name="Pan" Default="128" Preset="PositionPan"/>
+ <Channel Name="Tilt" Default="128" Preset="PositionTilt"/>
+ <Channel Name="Red" Preset="IntensityRed"/>
+ <Channel Name="Green" Preset="IntensityGreen"/>
+ <Channel Name="Blue" Preset="IntensityBlue"/>
+ <Channel Name="Dimmer" Preset="IntensityMasterDimmer"/>
+ <Channel Name="Strobe">
+  <Group Byte="0">Shutter</Group>
+  <Capability Min="0" Max="9" Preset="ShutterOpen">Open</Capability>
+  <Capability Min="10" Max="255" Preset="StrobeSlowToFast">Strobe slow to fast</Capability>
+ </Channel>
+ <Channel Name="Beams">
+  <Group Byte="0">Effect</Group>
+  <Capability Min="0" Max="255">Number of beams 1-64 (fan, tunnel)</Capability>
+ </Channel>
+ <Channel Name="Animation speed">
+  <Group Byte="0">Speed</Group>
+  <Capability Min="0" Max="0">Static</Capability>
+  <Capability Min="1" Max="255" Preset="SlowToFast">Animation slow to fast</Capability>
+ </Channel>
+ <Mode Name="13 Channel">
+  <Channel Number="0">Mode</Channel>
+  <Channel Number="1">Pattern</Channel>
+  <Channel Number="2">Size</Channel>
+  <Channel Number="3">Rotation</Channel>
+  <Channel Number="4">Pan</Channel>
+  <Channel Number="5">Tilt</Channel>
+  <Channel Number="6">Red</Channel>
+  <Channel Number="7">Green</Channel>
+  <Channel Number="8">Blue</Channel>
+  <Channel Number="9">Dimmer</Channel>
+  <Channel Number="10">Strobe</Channel>
+  <Channel Number="11">Beams</Channel>
+  <Channel Number="12">Animation speed</Channel>
+ </Mode>
+ <Physical>
+  <Bulb Type="Projector" Lumens="0" ColourTemperature="0"/>
+  <Dimensions Weight="3" Width="300" Height="120" Depth="250"/>
+  <Lens Name="Other" DegreesMin="1" DegreesMax="30"/>
+  <Focus Type="Mirror" PanMax="30" TiltMax="30"/>
+  <Technical PowerConsumption="250" DmxConnector="Other"/>
+ </Physical>
+</FixtureDefinition>
