@@ -52,3 +52,7 @@ point stream later.
 ```bash
 cargo test
 ```
+
+## License
+
+Licensed under the [MIT license](LICENSE).
