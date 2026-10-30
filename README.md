@@ -1,164 +1,192 @@
-# BudgetLaser
+<h1 align="center">BudgetLaser</h1>
 
-Turns a projector in haze into a laser-effect fixture: virtual DMX fixtures that draw laser
-patterns or play ILDA (.ild) files fullscreen. Every lit pixel becomes a beam from the lens, so the projector behaves like a scanner without moving parts.
+<p align="center"><b>Turn a video projector into a DMX laser-effect fixture. Add haze, get beams.</b></p>
 
-Design document: https://claude.ai/artifact/DKb3a19K6z61ffMABD3tJc
+<p align="center">Free and open source. Patch it on any lighting desk over Art-Net, sACN or DMX USB Pro,<br>
+and play your own ILDA animations from the same cue list as the rest of your rig.</p>
 
-## Build and run
+<p align="center">
+  <a href="https://github.com/Timdebruijn/budgetlaser/actions/workflows/ci.yml"><img src="https://github.com/Timdebruijn/budgetlaser/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT license"></a>
+</p>
+
+<p align="center">
+  <img src="docs/media/demo.gif" alt="Fan, tunnel, grid, wave, polygon, twinkle, an ILDA animation and four fixtures on one output" width="720">
+</p>
+<p align="center"><sub>Renderer output: what the projector shows, not a photo of a hazy room.</sub></p>
+<!-- TODO: add a photo or short video of real beams in haze. -->
+
+## What it is
+
+Put a projector in haze and every lit pixel becomes a visible beam from the lens. BudgetLaser
+draws laser-style line art fullscreen and shows up on your desk as a lighting fixture, so a
+plain projector behaves like a scanner with no moving parts. There is no laser source in the
+device: all light is your projector's.
+
+- **A real DMX fixture.** Art-Net, sACN (E1.31) or Enttec DMX USB Pro; 13, 14, 17 or 18 channel
+  modes; a QLC+ fixture definition is included.
+- **ILDA from your lighting desk.** Pick a `.ild` file and its speed on two DMX channels.
+- **Several lasers on one projector.** Split the output into zones, one fixture per zone.
+- **Free and open.** MIT license, one binary and one config file. Runs on macOS, Windows, Linux
+  and the Raspberry Pi 5.
+
+## Quick start
+
+You need a [Rust toolchain](https://rustup.rs). No lighting desk is needed to try it.
 
 ```bash
+git clone https://github.com/Timdebruijn/budgetlaser && cd budgetlaser
 cargo build --release
-./target/release/budgetlaser budgetlaser.toml
+./target/release/budgetlaser budgetlaser.toml     # fullscreen; Esc quits
 ```
 
-`Esc` quits. All keys in `budgetlaser.toml` are optional; see the comments there.
-Log level via `RUST_LOG` (`debug` prints fps every 5 s).
+Then, from a second terminal, send it some DMX over Art-Net (plain Python, nothing to install):
 
-`--record DIR [--seconds S] [--size WxH]` renders offscreen instead of opening a window and
-writes every frame (60 fps, default 10 s at 960x540, about 1.5 MB per frame) to `DIR` as a
-BMP, for screenshots and demo GIFs without a window, for example on a locked screen. It still
-needs a GPU. DMX input works as usual, so drive it with `tools/dmx_test.py` while it records;
-without DMX the frames are black. Use an empty `DIR`: older frames are not removed. A machine
-that cannot keep up logs late frames, and its clip plays back too fast.
+```bash
+tools/dmx_test.py --pattern tunnel --beams 64
+tools/dmx_test.py --pattern fan --color 255,0,80
+tools/dmx_test.py --pattern ilda --file 0 --color 255,255,255   # ilda/demo.ild
+```
 
-## Input
+Point the projector at the room, switch the lights off and the hazer on.
 
-| Source | Config | Notes |
-|---|---|---|
-| Art-Net | `"artnet"` in `sources`, `artnet_universe` = 15-bit port-address (QLC+ "universe 1" is 0) | Answers ArtPoll; shares UDP 6454 with other apps on the same host |
-| sACN | `"sacn"` in `sources`, `sacn_universe` = 1..63999 | Multicast; honours priority, ignores preview data |
-| DMX USB Pro | `"usbpro"` in `sources`, `serial_port` | Enttec Pro protocol; Open DMX clones cannot receive |
+## Made for show night
 
-Several sources and senders can drive the same universe at once. The highest priority among
-live senders wins and senders sharing that priority merge HTP (highest value per channel).
-Art-Net and USB Pro count as priority 100, the sACN default. A silent sender drops out after
-2.5 s (sACN, USB Pro) or 10 s (Art-Net, per its merge rules); an sACN sender that terminates
-its stream drops out at once. Per-address priority (start code 0xDD) is not supported.
+- **Club night or DJ set.** A tunnel on the drop and a fan on the build, on a fader, from the
+  same desk that runs the wash and the movers.
+- **Church, school play or theatre.** Cue a polygon or a twinkle field per scene, fade it with
+  the rest of the rig, and black it out with the master.
+- **Programming ILDA content without a laser.** Build and test the cue list at your desk. Real
+  beams in haze will look different from a screen, so check on site.
 
-Fixture: 13 channels (mode, pattern, size, rotation, pan, tilt, R, G, B, dimmer, strobe,
-beam count, animation speed), as specified in the design document. Each `[[fixture]]` block
-in the config adds one fixture with its own `start_address`, `personality` and `zone` (a
-rectangle of the output), so several virtual lasers can share one projector. Footprints may
-overlap: two fixtures on the same address mirror each other. All fixtures listen to the same
-universe. Channels 1-13 are the same in every personality, so programming for the
-13-channel mode keeps working:
+## Patch it like any fixture
 
-| `personality` | Adds |
+Channels 1-13 are the same in every mode, so a show programmed in 13ch survives a switch to 18ch.
+
+| Mode | Channels |
 |---|---|
-| `13ch` | - |
-| `14ch` | 14 beam width |
-| `17ch` | 14-17 fine size, rotation, pan, tilt |
-| `18ch` | 14-17 fine, 18 beam width |
+| 13ch | mode, pattern, size, rotation, pan, tilt, red, green, blue, dimmer, strobe, beams, animation speed |
+| 14ch | 13ch + beam width |
+| 17ch | 13ch + 16-bit fine size, rotation, pan and tilt for smooth slow moves |
+| 18ch | 17ch + beam width |
 
-A fine channel is a fraction of one coarse step. Rotation fine only applies to the
-static-angle range. Beam width scales `line_width_px` per fixture: 0 keeps the configured
-width, 1-255 go from 0.5x to 8x (about 64 = 1x), so a dim projector can draw thicker beams.
+BudgetLaser answers ArtPoll, so Art-Net desks can discover it. Several desks or sources can
+drive it at once (highest priority wins, equal priority merges HTP), and it interpolates between
+DMX frames so motion stays smooth. If the signal drops, it blacks out after 3 s, or holds the
+last look if you prefer.
 
-**Console fixture definition.** [fixtures/BudgetLaser-Beamer-Laser.qxf](fixtures/BudgetLaser-Beamer-Laser.qxf)
-describes all four modes (13, 14, 17 and 18 channel) for QLC+ (4.14 and 5.x share the format). Copy it
-into the QLC+ user fixture folder and restart QLC+; it then appears under manufacturer
-BudgetLaser:
+The QLC+ definition is in [fixtures/](fixtures/BudgetLaser-Beamer-Laser.qxf), with all four modes
+and pan/tilt presets for the EFX editor. On another desk, build the fixture from the channel
+tables in [docs/reference.md](docs/reference.md).
 
-- macOS: `~/Library/Application Support/QLC+/Fixtures`
-- Linux: `~/.qlcplus/fixtures`
-- Windows: `%UserProfile%\QLC+\Fixtures`
+## What it draws
 
-Pan and tilt use QLC+'s position presets, so the EFX editor can move the pattern. The
-physical data (30 degrees pan/tilt, 1-30 degrees zoom) is nominal: the real angles depend
-on the projector's throw.
+Channel 2 picks the pattern: dot, line, circle, fan and tunnel (1-64 beams), grid (up to 8x8),
+twinkle (1-64 dots), wave (1-8 cycles), polygon (3-12 sides) or an ILDA file. Size, rotation
+(fixed angle or spinning either way, up to 2 turns a second), pan, tilt, colour, dimmer and
+strobe (up to 25 Hz) work on all of them.
 
-Patterns on channel 2. Channel 12 (beams) and channel 13 (animation speed) mean
-something per pattern:
+<p align="center">
+  <img src="docs/media/patterns.png" alt="Fan, tunnel, grid, wave, polygon and twinkle" width="720">
+</p>
+<p align="center"><sub>Fan, tunnel, grid, wave, polygon, twinkle. Each dot is a beam once there is haze in the room.</sub></p>
 
-| Ch 2 | Pattern | Channel 12 | Animation |
+**Beam width** (14ch and 18ch) scales the line width per fixture from 0.5x to 8x, so a dim
+projector can draw fatter beams and a bright one finer ones.
+
+## Your own ILDA files, from the desk
+
+Playing your own laser animations usually means a laser DAC plus show software, and QLC+ users
+have [asked for ILDA playback](https://forum.qlcplus.org/viewtopic.php?p=58575). Here a `.ild`
+file is just another pattern:
+
+| Channel | Value | Does |
+|---|---|---|
+| 2 (pattern) | 180-199 | play an ILDA file |
+| 12 (beams) | 0-255 | which file: the files in `ilda/`, sorted by name, counted from 0 |
+| 13 (animation speed) | 0 / 128 / 255 | hold the first frame / 30 fps / twice as fast |
+
+<p align="center">
+  <img src="docs/media/ilda.png" alt="A rainbow ILDA animation frame" width="560">
+</p>
+<p align="center"><sub>An ILDA animation, renderer output.</sub></p>
+
+At red = green = blue = 255 the file shows its own colours; lower values tint it. Size,
+rotation, pan, tilt, dimmer and strobe apply too. ILDA formats 0, 1, 2, 4 and 5 are supported.
+
+## Several lasers, one projector
+
+Each `[[fixture]]` block in the config gets its own DMX address, mode and zone: a rectangle of
+the output. Four zones make four independent "lasers" from one projector.
+
+<p align="center">
+  <img src="docs/media/zones.png" alt="Four fixtures, one per quadrant, each with its own pattern and colour" width="560">
+</p>
+<p align="center"><sub>Four fixtures in four quadrants of one output, renderer output.</sub></p>
+
+## How it compares
+
+| | Lights up a projector | Patchable DMX fixture | Plays ILDA |
 |---|---|---|---|
-| 0-19 | Dot | - | - |
-| 20-39 | Line | - | sweeps around the centre |
-| 40-59 | Circle / cone | - | radius breathes |
-| 60-79 | Fan | 1-64 beams | fan opens and closes |
-| 80-99 | Tunnel | 1-64 beams | radius breathes |
-| 100-119 | Grid | lattice of 1x1 to 8x8 beams | spacing breathes |
-| 120-139 | Twinkle | 1-64 dots | dots fade in and out, then move |
-| 140-159 | Wave | 1-8 cycles | wave travels |
-| 160-179 | Polygon | 3-12 sides | outline breathes |
-| 180-199 | ILDA file | file number 0-255 | playback speed; 0 holds frame 0 |
-| 200-255 | reserved | | |
+| **BudgetLaser** | yes | yes | yes |
+| Laser show previewers | no, they draw on a monitor | they take DMX in | yes, for a real laser |
+| Audio-driven projector beam tools | yes | no | no |
+| VJ and media software | as content you build yourself | DIY | via add-ons for real lasers |
+| Entry-level DMX lasers | n/a, a real laser | yes, preset patterns | often not |
 
-**ILDA files.** Put `.ild` files in the `[ilda] dir` (default `ilda/` next to the config
-file); they are loaded at start, sorted by file name, and the log lists each file with its
-number. Channel 12 selects a file by that number (raw 0-255, so value 3 is the fourth file).
-Formats 0, 1, 2, 4 and 5 of the ILDA spec (revision 011) are read; indexed colours without a
-palette use the spec's default palette. ILDA files carry no timing: frames play at
-`frame_rate` (default 30 fps) at channel 13 = 128, up to 2x at 255; 0 holds the first frame.
-The file's own colours show at R = G = B = 255; lower values tint them. Size, rotation,
-pan/tilt, dimmer and strobe work as for the patterns. A file that fails to load keeps its
-number but draws nothing. New files need a restart.
+We found no other tool that does all three (checked 2026-10-30). Products, prices and sources
+are in [docs/comparison.md](docs/comparison.md).
 
-Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
+## Raspberry Pi 5 appliance
 
-## Output
+`deploy/install.sh` turns a Pi 5 into a box that boots straight into the output: a kiosk on the
+HDMI port, a systemd service, managed over SSH. CI builds and tests the Pi binary. The target is
+1080p60 with glow, which **has not been measured on a Pi yet**; [docs/raspberry-pi.md](docs/raspberry-pi.md)
+shows how to install it and measure it. Pi Zero and Pi 3 are not supported: their GPU lacks the
+graphics API the renderer needs.
 
-Rust + wgpu: Metal on macOS, DX12/Vulkan on Windows, Vulkan/GLES on Linux and Raspberry Pi.
-Vsync (Fifo), additive HDR line rendering with optional glow (`glow_decay` per frame),
-`internal_scale = 0.5` renders at half resolution on weak GPUs. `mapping = "fit"` keeps the
-square scan field centred; `"stretch"` fills the width.
+## Limitations
 
-Platform notes:
-- macOS asks once to allow incoming connections for the binary (firewall). Deny = no DMX
-  from the network; Art-Net or sACN unicast to 127.0.0.1 still works.
-- Windows needs a firewall rule for UDP 6454 / 5568; USB Pro appears as a COM port.
+- **A projector is not a laser.** It is dimmer and softer, it needs haze and a dark room, and
+  how well beams read depends on its brightness and your haze. Its black level shows as a faint
+  glow cone.
+- **No scan flicker yet.** ILDA files play at a fixed frame rate (30 fps by default).
+- **Not a replacement for a certified show laser,** and it cannot take a laser DAC signal yet
+  (see the roadmap).
 
-## Raspberry Pi 5
+## Safety
 
-Target: Raspberry Pi OS Lite (trixie), no desktop. BudgetLaser runs fullscreen inside the
-`cage` Wayland kiosk on tty1, started by systemd.
+BudgetLaser adds no light of its own, but your projector and your venue still have rules:
 
-1. Get an aarch64 binary: download the `budgetlaser-aarch64-linux` artifact from a CI run,
-   or build it on an Apple Silicon Mac in an arm64 container:
+- **Laser-phosphor ("laser") projectors are laser products.** The FDA classifies them under
+  [Laser Notice 57](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/classification-and-requirements-laser-illuminated-projectors-lips-laser-notice-no-57),
+  and Risk Group 3 projectors have a hazard distance. Read the projector manual and keep people
+  out of that distance.
+- **Don't point it into the audience** unless the projector manual allows it.
+- **Check venue rules and local permits** before you rig.
+- **Haze can set off smoke detectors.** Talk to the venue first.
 
-   ```bash
-   docker run --rm --platform linux/arm64 -v "$PWD":/src -w /src -e CARGO_TARGET_DIR=/src/target/aarch64-linux rust:1.99.1-bookworm cargo build --release --locked
-   ```
+## Roadmap
 
-   The binary lands in `target/aarch64-linux/release/budgetlaser`. It is built against
-   glibc 2.36 (bookworm) and runs on both bookworm and trixie.
-2. Copy the binary, `budgetlaser.toml` and the `deploy/` directory to the Pi, then run as
-   root (without a config argument the default `budgetlaser.toml` is installed once):
+Not built yet:
 
-   ```bash
-   sudo deploy/install.sh ./budgetlaser my-config.toml
-   ```
+1. **Network laser DAC emulation** (Ether Dream, then IDN), so laser show software can drive the
+   projector as if it were a laser.
+2. **Analogue ILDA input** (DB25), so a real laser DAC can drive it.
 
-   This installs `cage`, creates the `budgetlaser` user (in `dialout` for the USB Pro),
-   installs the binary, config, PAM file and `budgetlaser.service`, creates
-   `/etc/budgetlaser/ilda` for .ild files, and starts it. The service replaces the login
-   prompt on tty1; use SSH to manage the Pi. After adding .ild files, run
-   `sudo systemctl restart budgetlaser`.
-3. Logs: `journalctl -u budgetlaser -f`.
+## Documentation
 
-**Measuring the v0.1 gate** (1080p60 with glow, stable): set the beamer to 1080p60, keep
-`glow = true` and drive the worst case from another machine for a few minutes:
+- [docs/reference.md](docs/reference.md): inputs and merging, channel tables, patterns, ILDA,
+  output and config options, platform notes.
+- [docs/raspberry-pi.md](docs/raspberry-pi.md): Pi 5 build, install, logs and the performance test.
+- [docs/comparison.md](docs/comparison.md): alternatives, with sources.
+- [budgetlaser.toml](budgetlaser.toml): the config; every key is optional and commented.
 
-```bash
-tools/dmx_test.py --host <pi-ip> --pattern tunnel --beams 64 --seconds 300
-```
+## Contributing
 
-Every 10 s the journal shows a line like `60.0 fps, worst frame 16.9 ms, 0 dropped`.
-A window with dropped frames logs at warn. The gate passes when every window shows
-60 fps and 0 dropped. If it does not, try `internal_scale = 0.75` and then `glow = false`
-to see which pass costs the frames.
-
-## Layout
-
-Single crate; modules mirror the planned crates: `point` (point-stream contract), `fixture`
-(channel decode, smoothing), `pattern` (generators + transform chain), `input/*` (sources,
-triple buffer), `ilda` (.ild reader), `render` (wgpu), `main` (config, window, loop).
-
-```bash
-cargo test
-```
+Issues and pull requests are welcome, one topic per pull request. Especially wanted: photos or
+video of BudgetLaser in real haze, and Pi 5 measurements. Run the tests with `cargo test`.
 
 ## License
 
-Licensed under the [MIT license](LICENSE).
+[MIT](LICENSE)
