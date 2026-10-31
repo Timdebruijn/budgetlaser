@@ -1,0 +1,118 @@
+# Reference
+
+Everything the [README](../README.md) leaves out: inputs, channel layout, patterns, ILDA
+playback, output options and the code layout.
+
+## Build and run
+
+```bash
+cargo build --release
+./target/release/budgetlaser budgetlaser.toml
+```
+
+`Esc` quits. All keys in `budgetlaser.toml` are optional; see the comments there.
+Log level via `RUST_LOG` (`debug` prints fps every 5 s).
+
+`--record DIR [--seconds S] [--size WxH]` renders offscreen instead of opening a window and
+writes every frame (60 fps, default 10 s at 960x540, about 1.5 MB per frame) to `DIR` as a
+BMP, for screenshots and demo GIFs without a window, for example on a locked screen. It still
+needs a GPU. DMX input works as usual, so drive it with `tools/dmx_test.py` while it records;
+without DMX the frames are black. Use an empty `DIR`: older frames are not removed. A machine
+that cannot keep up logs late frames, and its clip plays back too fast.
+
+## Input
+
+| Source | Config | Notes |
+|---|---|---|
+| Art-Net | `"artnet"` in `sources`, `artnet_universe` = 15-bit port-address (QLC+ "universe 1" is 0) | Answers ArtPoll; shares UDP 6454 with other apps on the same host |
+| sACN | `"sacn"` in `sources`, `sacn_universe` = 1..63999 | Multicast; honours priority, ignores preview data |
+| DMX USB Pro | `"usbpro"` in `sources`, `serial_port` | Enttec Pro protocol; Open DMX clones cannot receive |
+
+Several sources and senders can drive the same universe at once. The highest priority among
+live senders wins and senders sharing that priority merge HTP (highest value per channel).
+Art-Net and USB Pro count as priority 100, the sACN default. A silent sender drops out after
+2.5 s (sACN, USB Pro) or 10 s (Art-Net, per its merge rules); an sACN sender that terminates
+its stream drops out at once. Per-address priority (start code 0xDD) is not supported.
+
+Fixture: 13 channels (mode, pattern, size, rotation, pan, tilt, R, G, B, dimmer, strobe,
+beam count, animation speed), as specified in the design document. Each `[[fixture]]` block
+in the config adds one fixture with its own `start_address`, `personality` and `zone` (a
+rectangle of the output), so several virtual lasers can share one projector. Footprints may
+overlap: two fixtures on the same address mirror each other. All fixtures listen to the same
+universe. Channels 1-13 are the same in every personality, so programming for the
+13-channel mode keeps working:
+
+| `personality` | Adds |
+|---|---|
+| `13ch` | - |
+| `14ch` | 14 beam width |
+| `17ch` | 14-17 fine size, rotation, pan, tilt |
+| `18ch` | 14-17 fine, 18 beam width |
+
+A fine channel is a fraction of one coarse step. Rotation fine only applies to the
+static-angle range. Beam width scales `line_width_px` per fixture: 0 keeps the configured
+width, 1-255 go from 0.5x to 8x (about 64 = 1x), so a dim projector can draw thicker beams.
+
+**Console fixture definition.** [fixtures/BudgetLaser-Beamer-Laser.qxf](../fixtures/BudgetLaser-Beamer-Laser.qxf)
+describes all four modes (13, 14, 17 and 18 channel) for QLC+ (4.14 and 5.x share the format). Copy it
+into the QLC+ user fixture folder and restart QLC+; it then appears under manufacturer
+BudgetLaser:
+
+- macOS: `~/Library/Application Support/QLC+/Fixtures`
+- Linux: `~/.qlcplus/fixtures`
+- Windows: `%UserProfile%\QLC+\Fixtures`
+
+Pan and tilt use QLC+'s position presets, so the EFX editor can move the pattern. The
+physical data (30 degrees pan/tilt, 1-30 degrees zoom) is nominal: the real angles depend
+on the projector's throw.
+
+Patterns on channel 2. Channel 12 (beams) and channel 13 (animation speed) mean
+something per pattern:
+
+| Ch 2 | Pattern | Channel 12 | Animation |
+|---|---|---|---|
+| 0-19 | Dot | - | - |
+| 20-39 | Line | - | sweeps around the centre |
+| 40-59 | Circle / cone | - | radius breathes |
+| 60-79 | Fan | 1-64 beams | fan opens and closes |
+| 80-99 | Tunnel | 1-64 beams | radius breathes |
+| 100-119 | Grid | lattice of 1x1 to 8x8 beams | spacing breathes |
+| 120-139 | Twinkle | 1-64 dots | dots fade in and out, then move |
+| 140-159 | Wave | 1-8 cycles | wave travels |
+| 160-179 | Polygon | 3-12 sides | outline breathes |
+| 180-199 | ILDA file | file number 0-255 | playback speed; 0 holds frame 0 |
+| 200-255 | reserved | | |
+
+**ILDA files.** Put `.ild` files in the `[ilda] dir` (default `ilda/` next to the config
+file); they are loaded at start, sorted by file name, and the log lists each file with its
+number. Channel 12 selects a file by that number (raw 0-255, so value 3 is the fourth file).
+Formats 0, 1, 2, 4 and 5 of the ILDA spec (revision 011) are read; indexed colours without a
+palette use the spec's default palette. ILDA files carry no timing: frames play at
+`frame_rate` (default 30 fps) at channel 13 = 128, up to 2x at 255; 0 holds the first frame.
+The file's own colours show at R = G = B = 255; lower values tint them. Size, rotation,
+pan/tilt, dimmer and strobe work as for the patterns. A file that fails to load keeps its
+number but draws nothing. New files need a restart.
+
+Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
+
+## Output
+
+Rust + wgpu: Metal on macOS, DX12/Vulkan on Windows, Vulkan/GLES on Linux and Raspberry Pi.
+Vsync (Fifo), additive HDR line rendering with optional glow (`glow_decay` per frame),
+`internal_scale = 0.5` renders at half resolution on weak GPUs. `mapping = "fit"` keeps the
+square scan field centred; `"stretch"` fills the width.
+
+Platform notes:
+- macOS asks once to allow incoming connections for the binary (firewall). Deny = no DMX
+  from the network; Art-Net or sACN unicast to 127.0.0.1 still works.
+- Windows needs a firewall rule for UDP 6454 / 5568; USB Pro appears as a COM port.
+
+## Layout
+
+Single crate; modules mirror the planned crates: `point` (point-stream contract), `fixture`
+(channel decode, smoothing), `pattern` (generators + transform chain), `input/*` (sources,
+triple buffer), `ilda` (.ild reader), `render` (wgpu), `main` (config, window, loop).
+
+```bash
+cargo test
+```
