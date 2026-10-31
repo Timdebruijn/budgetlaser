@@ -57,7 +57,9 @@ fn scissor(r: [f32; 4], w: u32, h: u32) -> (u32, u32, u32, u32) {
 }
 
 pub struct Renderer {
-    surface: wgpu::Surface<'static>,
+    /// None when rendering offscreen (`--record`).
+    surface: Option<wgpu::Surface<'static>>,
+    offscreen: Option<wgpu::Texture>,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
@@ -116,7 +118,63 @@ impl Renderer {
         config.present_mode = wgpu::PresentMode::Fifo; // vsync, no tearing
         config.desired_maximum_frame_latency = 1;
         surface.configure(&device, &config);
+        Self::build(device, queue, config, cfg, Some(surface))
+    }
 
+    /// Renders into a texture instead of a window; read frames with `read_frame`.
+    pub fn offscreen(width: u32, height: u32, cfg: Cfg) -> Self {
+        let instance =
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::HighPerformance,
+            ..Default::default()
+        }))
+        .expect("no GPU adapter");
+        log::info!("GPU: {:?}", adapter.get_info());
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("budgetlaser"),
+            required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+            ..Default::default()
+        }))
+        .expect("request device");
+        let config = wgpu::SurfaceConfiguration {
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            format: wgpu::TextureFormat::Rgba8UnormSrgb,
+            width,
+            height,
+            present_mode: wgpu::PresentMode::Fifo,
+            desired_maximum_frame_latency: 1,
+            alpha_mode: wgpu::CompositeAlphaMode::Opaque,
+            view_formats: Vec::new(),
+            color_space: wgpu::SurfaceColorSpace::Auto,
+        };
+        Self::build(device, queue, config, cfg, None)
+    }
+
+    fn build(
+        device: wgpu::Device,
+        queue: wgpu::Queue,
+        config: wgpu::SurfaceConfiguration,
+        cfg: Cfg,
+        surface: Option<wgpu::Surface<'static>>,
+    ) -> Self {
+        let format = config.format;
+        let offscreen = surface.is_none().then(|| {
+            device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("offscreen"),
+                size: wgpu::Extent3d {
+                    width: config.width,
+                    height: config.height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: config.usage,
+                view_formats: &[],
+            })
+        });
         let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
 
         let uniform_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -258,6 +316,7 @@ impl Renderer {
         let hdr = make_targets(&device, &tex_layout, &sampler, hdr_size);
         Self {
             surface,
+            offscreen,
             device,
             queue,
             config,
@@ -284,7 +343,9 @@ impl Renderer {
         }
         self.config.width = width;
         self.config.height = height;
-        self.surface.configure(&self.device, &self.config);
+        if let Some(s) = &self.surface {
+            s.configure(&self.device, &self.config);
+        }
         self.recreate_targets();
     }
 
@@ -303,19 +364,22 @@ impl Renderer {
 
     /// Draws and presents one frame; false when nothing was shown (window hidden).
     pub fn render(&mut self, segs: &[Segment], batches: &[Batch]) -> bool {
-        let frame = match self.surface.get_current_texture() {
-            wgpu::CurrentSurfaceTexture::Success(t)
-            | wgpu::CurrentSurfaceTexture::Suboptimal(t) => t,
-            wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
-                // No vsync to block on while hidden or minimised; without this the
-                // loop spins at 100% CPU.
-                std::thread::sleep(std::time::Duration::from_millis(16));
-                return false;
-            }
-            _ => {
-                self.surface.configure(&self.device, &self.config);
-                return false;
-            }
+        let frame = match &self.surface {
+            None => None,
+            Some(surface) => match surface.get_current_texture() {
+                wgpu::CurrentSurfaceTexture::Success(t)
+                | wgpu::CurrentSurfaceTexture::Suboptimal(t) => Some(t),
+                wgpu::CurrentSurfaceTexture::Timeout | wgpu::CurrentSurfaceTexture::Occluded => {
+                    // No vsync to block on while hidden or minimised; without this the
+                    // loop spins at 100% CPU.
+                    std::thread::sleep(std::time::Duration::from_millis(16));
+                    return false;
+                }
+                _ => {
+                    surface.configure(&self.device, &self.config);
+                    return false;
+                }
+            },
         };
         let (w, h) = (self.hdr_size.0 as f32, self.hdr_size.1 as f32);
         self.queue.write_buffer(
@@ -399,7 +463,11 @@ impl Renderer {
             }
         }
         {
-            let view = frame.texture.create_view(&Default::default());
+            let target = frame.as_ref().map_or_else(
+                || self.offscreen.as_ref().expect("offscreen target"),
+                |f| &f.texture,
+            );
+            let view = target.create_view(&Default::default());
             let mut pass = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("tonemap"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -422,10 +490,56 @@ impl Renderer {
             pass.draw(0..3, 0..1);
         }
         self.queue.submit([enc.finish()]);
-        self.queue.present(frame);
+        if let Some(frame) = frame {
+            self.queue.present(frame);
+        }
         self.frame += 1;
         self.first = false;
         true
+    }
+
+    /// Copies the last offscreen frame back as tightly packed RGBA rows, top row first.
+    pub fn read_frame(&self) -> (u32, u32, Vec<u8>) {
+        let tex = self
+            .offscreen
+            .as_ref()
+            .expect("read_frame needs an offscreen renderer");
+        let (w, h) = (self.config.width, self.config.height);
+        // Rows in a texture-to-buffer copy must be 256-byte aligned.
+        let row = w * 4;
+        let padded =
+            row.div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
+        let buf = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("readback"),
+            size: (padded * h) as u64,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mut enc = self.device.create_command_encoder(&Default::default());
+        enc.copy_texture_to_buffer(
+            tex.as_image_copy(),
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buf,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(padded),
+                    rows_per_image: None,
+                },
+            },
+            tex.size(),
+        );
+        self.queue.submit([enc.finish()]);
+        buf.map_async(wgpu::MapMode::Read, .., |r| r.expect("map readback buffer"));
+        self.device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("wait for readback");
+        let data = buf.get_mapped_range(..).expect("mapped readback");
+        let pixels = data
+            .chunks(padded as usize)
+            .flat_map(|r| &r[..row as usize])
+            .copied()
+            .collect();
+        (w, h, pixels)
     }
 }
 
