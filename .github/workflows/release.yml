@@ -1,0 +1,92 @@
+name: Release
+
+# A tag v* builds every platform and publishes a GitHub release. A pull request that
+# changes this file builds and packages too, without publishing.
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths: [.github/workflows/release.yml]
+
+env:
+  RUST: 1.99.1
+  # Shipped next to the binary: it reads budgetlaser.toml and ilda/ from the folder.
+  FILES: budgetlaser.toml ilda fixtures tools LICENSE README.md
+
+jobs:
+  linux:
+    strategy:
+      matrix:
+        include:
+          - { arch: x86_64, runner: ubuntu-24.04 }
+          - { arch: aarch64, runner: ubuntu-24.04-arm }
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    # Debian bookworm, glibc 2.36: runs on current distributions and Pi OS bookworm and trixie.
+    container: rust:1.99.1-bookworm
+    steps:
+      - uses: actions/checkout@v7
+      - run: cargo build --release --locked
+      - run: |
+          d=budgetlaser-${{ matrix.arch }}-linux
+          mkdir $d && cp -r target/release/budgetlaser $FILES deploy $d/
+          tar czf $d.tar.gz $d
+      - uses: actions/upload-artifact@v7
+        with:
+          name: linux-${{ matrix.arch }}
+          path: budgetlaser-*.tar.gz
+
+  macos:
+    name: macOS universal
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          rustup toolchain install $RUST --profile minimal --target aarch64-apple-darwin,x86_64-apple-darwin
+          rustup default $RUST
+      - run: |
+          cargo build --release --locked --target aarch64-apple-darwin
+          cargo build --release --locked --target x86_64-apple-darwin
+      - run: |
+          d=budgetlaser-macos
+          mkdir $d && cp -r $FILES $d/
+          lipo -create -output $d/budgetlaser target/{aarch64,x86_64}-apple-darwin/release/budgetlaser
+          tar czf $d.tar.gz $d
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos
+          path: budgetlaser-macos.tar.gz
+
+  windows:
+    name: Windows x86_64
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          rustup toolchain install $RUST --profile minimal
+          rustup default $RUST
+        shell: bash
+      - run: cargo build --release --locked
+      - run: |
+          d=budgetlaser-x86_64-windows
+          mkdir $d && cp -r target/release/budgetlaser.exe $FILES $d/
+          7z a $d.zip $d
+        shell: bash
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows
+          path: budgetlaser-x86_64-windows.zip
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          merge-multiple: true
+      - run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes budgetlaser-*
+        env:
+          GH_TOKEN: ${{ github.token }}
