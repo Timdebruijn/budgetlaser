@@ -165,13 +165,13 @@ fn unit_shape(pattern: Pattern, beams: u32, ph: &Phases, animating: bool, out: &
                 out.push(Point::lit(breathe * a.cos(), breathe * a.sin(), white));
             }
         }
-        Pattern::Ilda | Pattern::EtherDream => {} // build() copies the clip frame
+        Pattern::Ilda | Pattern::EtherDream | Pattern::Idn => {} // build() copies the clip frame
     }
 }
 
 /// Builds the point-stream frame for one render frame. `clip_frame` holds the
-/// current ILDA frame for Pattern::Ilda, or the points the Ether Dream played since
-/// the last render frame for Pattern::EtherDream, and is ignored otherwise.
+/// current ILDA frame for Pattern::Ilda, or the points the Ether Dream or IDN stream
+/// delivered since the last render frame, and is ignored otherwise.
 pub fn build(p: &Params, ph: &Phases, clip_frame: &[Point], dimmer_gamma: f32, frame: &mut Frame) {
     frame.points.clear();
     let Some(pattern) = p.pattern else { return };
@@ -179,7 +179,7 @@ pub fn build(p: &Params, ph: &Phases, clip_frame: &[Point], dimmer_gamma: f32, f
     if !p.on || !strobe_open {
         return;
     }
-    if matches!(pattern, Pattern::Ilda | Pattern::EtherDream) {
+    if matches!(pattern, Pattern::Ilda | Pattern::EtherDream | Pattern::Idn) {
         frame.points.extend_from_slice(clip_frame);
     } else {
         unit_shape(pattern, p.beams, ph, p.anim > 0.0, &mut frame.points);

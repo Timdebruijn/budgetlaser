@@ -7,7 +7,8 @@ pub struct Config {
     pub input: Input,
     pub output: Output,
     pub ilda: Ilda,
-    pub etherdream: EtherDream,
+    pub etherdream: Stream,
+    pub idn: Stream,
     #[serde(rename = "fixture")]
     pub fixtures: Vec<Fixture>,
 }
@@ -88,19 +89,19 @@ impl Default for Ilda {
     }
 }
 
-/// Ether Dream DAC emulation for laser show software.
+/// A point stream from laser show software: Ether Dream DAC emulation or IDN.
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
-pub struct EtherDream {
+pub struct Stream {
     pub enabled: bool,
     /// Draw the stream straight into `zone`. Off when only fixtures show it
-    /// (channel 2 = 200-219), or it is drawn twice.
+    /// (channel 2 = 200-219 or 220-239), or it is drawn twice.
     pub direct: bool,
     /// x, y, width, height as fractions of the output, origin top-left.
     pub zone: [f32; 4],
 }
 
-impl Default for EtherDream {
+impl Default for Stream {
     fn default() -> Self {
         Self {
             enabled: false,
@@ -132,7 +133,8 @@ impl Default for Config {
             input: Input::default(),
             output: Output::default(),
             ilda: Ilda::default(),
-            etherdream: EtherDream::default(),
+            etherdream: Stream::default(),
+            idn: Stream::default(),
             fixtures: vec![Fixture::default()],
         }
     }
@@ -181,11 +183,13 @@ impl Config {
                 ));
             }
         }
-        if !zone_ok(self.etherdream.zone) {
-            return Err(format!(
-                "etherdream.zone {:?} must lie within 0..1 with positive size",
-                self.etherdream.zone
-            ));
+        for (name, s) in [("etherdream", &self.etherdream), ("idn", &self.idn)] {
+            if !zone_ok(s.zone) {
+                return Err(format!(
+                    "{name}.zone {:?} must lie within 0..1 with positive size",
+                    s.zone
+                ));
+            }
         }
         Ok(self)
     }
@@ -302,6 +306,8 @@ mod tests {
         let bad: Config = toml::from_str("[ilda]\nframe_rate = 0.0").unwrap();
         assert!(bad.validate().is_err());
         let bad: Config = toml::from_str("[etherdream]\nzone = [0.5, 0.0, 0.6, 1.0]").unwrap();
+        assert!(bad.validate().is_err());
+        let bad: Config = toml::from_str("[idn]\nzone = [0.0, 0.0, 0.0, 1.0]").unwrap();
         assert!(bad.validate().is_err());
         let shipped: Config = toml::from_str(include_str!("../budgetlaser.toml")).unwrap();
         assert!(shipped.validate().is_ok());
