@@ -18,7 +18,7 @@ Art-Net, sACN, ILDA files and laser show software in. Fans, tunnels and line art
 <p align="center">
   <b>Art-Net</b> &middot; <b>sACN</b> &middot; <b>Enttec DMX USB Pro</b> &middot; <b>ILDA .ild</b> &middot; <b>Ether Dream</b> &middot; <b>IDN</b> &middot; <b>QLC+ fixture</b>
   <br>
-  <a href="#try-it-without-hardware">Try it</a> &middot; <a href="#why-not-something-else">Why not something else?</a> &middot; <a href="docs/reference.md">Reference</a>
+  <a href="https://github.com/Timdebruijn/budgetlaser/releases/latest"><b>Download</b></a> &middot; <a href="#try-it-without-hardware">Try it</a> &middot; <a href="#why-not-something-else">Why not something else?</a> &middot; <a href="docs/reference.md">Reference</a>
 </p>
 
 ## The idea
