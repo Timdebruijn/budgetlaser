@@ -1,9 +1,9 @@
 <h1 align="center">BudgetLaser</h1>
 
-<p align="center"><b>Turn a video projector into a DMX laser-effect fixture. Add haze, get beams.</b></p>
+<p align="center"><b>Patch your projector like a laser. Add haze, get beams.</b></p>
 
-<p align="center">Free and open source. Patch it on any lighting desk over Art-Net, sACN or DMX USB Pro,
-and play your own ILDA animations from the same cue list as the rest of your rig.</p>
+<p align="center">A free DMX fixture for the video projector you already own.<br>
+Art-Net, sACN, ILDA files and laser show software in. Fans, tunnels and line art out.</p>
 
 <p align="center">
   <a href="https://github.com/Timdebruijn/budgetlaser/actions/workflows/ci.yml"><img src="https://github.com/Timdebruijn/budgetlaser/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
@@ -11,30 +11,32 @@ and play your own ILDA animations from the same cue list as the rest of your rig
 </p>
 
 <p align="center">
-  <img src="docs/media/demo.gif" alt="Fan, tunnel, grid, wave, polygon, twinkle, an ILDA animation and four fixtures on one output" width="720">
+  <img src="docs/media/demo.gif" alt="Fan, tunnel, grid, wave, polygon, twinkle, an ILDA animation, four zones, a laser-software stream, then one output showing the stream, a tunnel, a fan and an ILDA file at once" width="720">
 </p>
-<p align="center"><sub>Renderer output: what the projector shows, not a photo of a hazy room.</sub></p>
-<!-- TODO: add a photo or short video of real beams in haze. -->
+<p align="center"><sub>Renderer output: what the projector shows, not a photo of a hazy room. In haze, every lit pixel becomes a beam.</sub></p>
 
-## What it is
+<p align="center">
+  <b>Art-Net</b> &middot; <b>sACN</b> &middot; <b>Enttec DMX USB Pro</b> &middot; <b>ILDA .ild</b> &middot; <b>Ether Dream</b> &middot; <b>IDN</b> &middot; <b>QLC+ fixture</b>
+  <br>
+  <a href="#try-it-without-hardware">Try it</a> &middot; <a href="#why-not-something-else">Why not something else?</a> &middot; <a href="docs/reference.md">Reference</a>
+</p>
 
-Put a projector in haze and every lit pixel becomes a visible beam from the lens. BudgetLaser
-draws laser-style line art fullscreen and shows up on your desk as a lighting fixture, so a
-plain projector behaves like a scanner with no moving parts. There is no laser source in the
-device: all light is your projector's.
+## The idea
 
-- **A real DMX fixture.** Art-Net, sACN (E1.31) or Enttec DMX USB Pro; 13, 14, 17 or 18 channel
-  modes; a QLC+ fixture definition is included.
-- **ILDA from your lighting desk.** Pick a `.ild` file and its speed on two DMX channels.
-- **Laser show software can drive it.** It shows up on the network as an Ether Dream DAC or an
-  IDN projector.
-- **Several lasers on one projector.** Split the output into zones, one fixture per zone.
-- **Free and open.** MIT license, one binary and one config file. Runs on macOS, Windows, Linux
-  and the Raspberry Pi 5.
+Point a projector into haze and every lit pixel is a visible beam from the lens. BudgetLaser
+draws laser-style line art fullscreen and shows up on your desk as a lighting fixture, so a plain
+projector works like a scanner with no moving parts.
 
-## Quick start
+It is a **laser look**, not a laser. BudgetLaser is software and adds no light of its own: every
+beam is your projector's.
 
-You need a [Rust toolchain](https://rustup.rs). No lighting desk is needed to try it.
+**Made for** school and theatre techs, club and mobile DJs, VJs, and laser programmers who want
+to see a show without a laser on the desk.
+
+## Try it without hardware
+
+No desk, no projector and no haze needed to see it work. You need a [Rust toolchain](https://rustup.rs);
+there are no prebuilt binaries yet.
 
 ```bash
 git clone https://github.com/Timdebruijn/budgetlaser && cd budgetlaser
@@ -42,7 +44,7 @@ cargo build --release
 ./target/release/budgetlaser budgetlaser.toml     # fullscreen; Esc quits
 ```
 
-Then, from a second terminal, send it some DMX over Art-Net (plain Python, nothing to install):
+In a second terminal, drive it over Art-Net with plain Python (nothing to install):
 
 ```bash
 tools/dmx_test.py --pattern tunnel --beams 64
@@ -50,156 +52,134 @@ tools/dmx_test.py --pattern fan --color 255,0,80
 tools/dmx_test.py --pattern ilda --file 0 --color 255,255,255   # ilda/demo.ild
 ```
 
-Point the projector at the room, switch the lights off and the hazer on.
+Then point the projector at the room: lights off, hazer on.
 
-## Made for show night
+## What you get
 
-- **Club night or DJ set.** A tunnel on the drop and a fan on the build, on a fader, from the
-  same desk that runs the wash and the movers.
-- **Church, school play or theatre.** Cue a polygon or a twinkle field per scene, fade it with
-  the rest of the rig, and black it out with the master.
-- **Programming ILDA content without a laser.** Build and test the cue list at your desk. Real
-  beams in haze will look different from a screen, so check on site.
+**A real DMX fixture, not a visualiser.** Art-Net (it answers ArtPoll, so desks find it), sACN
+and Enttec DMX USB Pro. 13, 14, 17 or 18 channels, with 16-bit fine size, rotation, pan and tilt
+for slow, smooth moves. Two desks at once? Highest priority wins, equal priority merges HTP. Lose
+the signal and it blacks out after 3 s, or holds the look if you prefer. A
+[QLC+ fixture definition](fixtures/BudgetLaser-Beamer-Laser.qxf) is included; on other desks,
+build the fixture from the [channel tables](docs/reference.md).
 
-## Patch it like any fixture
+**Ten looks on one channel.** Dot, line, circle, fan and tunnel (up to 64 beams), grid, twinkle,
+wave, polygon and ILDA. Rotation fixed or spinning, strobe up to 25 Hz, colour, dimmer, pan and
+tilt work on all of them. A tunnel on the drop, a fan on the build, from the same desk that runs
+the wash and the movers.
 
-Channels 1-13 are the same in every mode, so a show programmed in 13ch survives a switch to 18ch.
+<p align="center">
+  <img src="docs/media/patterns.png" alt="Fan as a row of dots, tunnel as a ring of dots, an 8x8 grid of dots, a wave, a polygon and a twinkle field" width="720">
+</p>
+<p align="center"><sub>Fan, tunnel, grid, wave, polygon, twinkle, as the projector draws them. Each dot is a beam in haze: the row of dots is a fan, the ring a tunnel.</sub></p>
+
+**Your own ILDA animations, from a fader.** DMX presets for the standard stuff, ILDA for your
+own: channel 2 at 180-199 plays a `.ild` file, channel 12 picks which one and channel 13 sets the
+speed. QLC+ users [asked for this](https://forum.qlcplus.org/viewtopic.php?p=58575). Formats 0,
+1, 2, 4 and 5.
+
+<p align="center">
+  <img src="docs/media/ilda.png" alt="A rainbow ILDA animation frame" width="480">
+</p>
+<p align="center"><sub>An ILDA animation, renderer output.</sub></p>
+
+**Laser show software, projector as the output.** Enable `[etherdream]` or `[idn]` in the config
+and BudgetLaser shows up on the network as an Ether Dream DAC or an IDN projector. A stream
+fills its own zone without any DMX, or you cue it from the desk on channel 2 with dimmer, size,
+pan and tilt. Programs that list Ether Dream or IDN output include MadLaser, Modulaser,
+Liberation and CloudLase. **We have tested it against the specs with the included test clients,
+not yet with any of these programs.**
+
+**One projector, several "lasers".** Each `[[fixture]]` block in the config gets its own DMX
+address, mode and zone of the output. Desk-driven fixtures and a laser-software stream can share
+one projector.
+
+<p align="center">
+  <img src="docs/media/stream.png" alt="One output in four zones: a laser-software stream top left, a tunnel top right, a fan bottom left and an ILDA file bottom right" width="720">
+</p>
+<p align="center"><sub>One projector, four fixtures: a laser-software stream over IDN, a tunnel, a fan and an ILDA file. Renderer output.</sub></p>
+
+**A box that boots into the show.** On a Raspberry Pi 5, `deploy/install.sh` sets up a kiosk that
+starts straight into the output and is managed over SSH ([guide](docs/raspberry-pi.md)). It also
+runs on macOS, Windows and Linux.
+
+## Why not something else?
+
+| | Light in the room | Patchable DMX fixture | ILDA, Ether Dream, IDN |
+|---|---|---|---|
+| **BudgetLaser** | yes, projector beams in haze | yes | plays ILDA files, takes Ether Dream and IDN in |
+| Laser show software | no, 3D preview on a monitor | takes DMX in | outputs to real lasers |
+| Lighting previs | no, on a monitor | visualises fixtures | via laser software |
+| Ether Dream and IDN simulators | no, a small debug window | no | takes them in, as a test tool |
+| Projector beam tools | yes | LaserSim did, last updated 2008 | no |
+| Entry-level DMX laser | a real Class 3B laser | yes, preset patterns | often none |
+
+Driving a projector like a laser is an old idea, and Pangolin Beyond has a paid projector mode. We
+found no free tool that does all three (checked 2026-11-01). Products, prices and sources are in
+[docs/comparison.md](docs/comparison.md).
+
+## Limits and safety
+
+- **A projector is not a laser.** It is dimmer and softer and needs haze and a dark room. Beams
+  start at the lens and stay inside the projection cone, so small and medium rooms suit it best.
+  Its black level shows as a faint glow cone.
+- **No scan flicker.** Output runs at the display's 60 Hz; ILDA files play at a fixed 30 fps.
+- **Not a replacement for a certified show laser.**
+- **Laser-phosphor projectors are laser products.** The FDA classifies them under
+  [Laser Notice 57](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/classification-and-requirements-laser-illuminated-projectors-lips-laser-notice-no-57),
+  and Risk Group 3 projectors have a hazard distance. Follow the projector manual, don't aim it
+  into the audience unless the manual allows it, check venue rules and permits, and tell the
+  venue about the haze: it can set off smoke detectors.
+
+## Status and help wanted
+
+BudgetLaser is young. Every image on this page is renderer output, made with `--record`; there is
+no footage of it in real haze yet. That footage is the next milestone, and these are the most
+useful contributions:
+
+1. **Film it in haze.** A phone clip of a projector running BudgetLaser.
+2. **Try your laser show software** over Ether Dream or IDN, and tell us what worked and what did not.
+3. **Measure the Pi 5.** The target is 1080p60 with glow; [docs/raspberry-pi.md](docs/raspberry-pi.md)
+   shows how to measure it.
+4. **Prebuilt binaries** for macOS, Windows and Linux.
+
+Open an issue or a pull request, one topic per pull request; `cargo test` runs the tests. If
+BudgetLaser is what you wanted from a projector and a hazer, a star helps others find it.
+
+<details>
+<summary><b>Channel modes</b></summary>
 
 | Mode | Channels |
 |---|---|
 | 13ch | mode, pattern, size, rotation, pan, tilt, red, green, blue, dimmer, strobe, beams, animation speed |
-| 14ch | 13ch + beam width |
-| 17ch | 13ch + 16-bit fine size, rotation, pan and tilt for smooth slow moves |
+| 14ch | 13ch + beam width (0.5x-8x) |
+| 17ch | 13ch + 16-bit fine size, rotation, pan and tilt |
 | 18ch | 17ch + beam width |
 
-BudgetLaser answers ArtPoll, so Art-Net desks can discover it. Several desks or sources can
-drive it at once (highest priority wins, equal priority merges HTP), and it interpolates between
-DMX frames so motion stays smooth. If the signal drops, it blacks out after 3 s, or holds the
-last look if you prefer.
+Channels 1-13 are the same in every mode, so a show programmed in 13ch survives a switch to 18ch.
+Pattern ranges and every value: [docs/reference.md](docs/reference.md).
 
-The QLC+ definition is in [fixtures/](fixtures/BudgetLaser-Beamer-Laser.qxf), with all four modes
-and pan/tilt presets for the EFX editor. On another desk, build the fixture from the channel
-tables in [docs/reference.md](docs/reference.md).
+</details>
 
-## What it draws
+<details>
+<summary><b>Make these images yourself</b></summary>
 
-Channel 2 picks the pattern: dot, line, circle, fan and tunnel (1-64 beams), grid (up to 8x8),
-twinkle (1-64 dots), wave (1-8 cycles), polygon (3-12 sides) or an ILDA file. Size, rotation
-(fixed angle or spinning either way, up to 2 turns a second), pan, tilt, colour, dimmer and
-strobe (up to 25 Hz) work on all of them.
+`--record` renders offscreen in real time and writes BMP frames, with DMX input working as usual:
 
-<p align="center">
-  <img src="docs/media/patterns.png" alt="Fan, tunnel, grid, wave, polygon and twinkle" width="720">
-</p>
-<p align="center"><sub>Fan, tunnel, grid, wave, polygon, twinkle. Each dot is a beam once there is haze in the room.</sub></p>
+```bash
+./target/release/budgetlaser budgetlaser.toml --record out --seconds 10 &
+tools/dmx_test.py --pattern fan --color 255,0,80 --seconds 10
+```
 
-**Beam width** (14ch and 18ch) scales the line width per fixture from 0.5x to 8x, so a dim
-projector can draw fatter beams and a bright one finer ones.
-
-## Your own ILDA files, from the desk
-
-Playing your own laser animations usually means a laser DAC plus show software, and QLC+ users
-have [asked for ILDA playback](https://forum.qlcplus.org/viewtopic.php?p=58575). Here a `.ild`
-file is just another pattern:
-
-| Channel | Value | Does |
-|---|---|---|
-| 2 (pattern) | 180-199 | play an ILDA file |
-| 12 (beams) | 0-255 | which file: the files in `ilda/`, sorted by name, counted from 0 |
-| 13 (animation speed) | 0 / 128 / 255 | hold the first frame / 30 fps / twice as fast |
-
-<p align="center">
-  <img src="docs/media/ilda.png" alt="A rainbow ILDA animation frame" width="560">
-</p>
-<p align="center"><sub>An ILDA animation, renderer output.</sub></p>
-
-At red = green = blue = 255 the file shows its own colours; lower values tint it. Size,
-rotation, pan, tilt, dimmer and strobe apply too. ILDA formats 0, 1, 2, 4 and 5 are supported.
-
-## Drive it from laser show software
-
-Set `enabled = true` under `[etherdream]` in the config and BudgetLaser answers as an
-[Ether Dream](https://ether-dream.com) laser DAC: show software that supports one finds it on the
-network and streams to it like a real laser. The stream fills its own zone without any DMX, or
-set channel 2 of a fixture to 200-219 to show it there, with dimmer, size, pan, tilt and
-blackout from your desk. No laser software at hand? `tools/etherdream_test.py` streams a
-rainbow circle.
-
-Software that speaks IDN, the ILDA Digital Network, finds BudgetLaser as an IDN projector
-with `enabled = true` under `[idn]`. It works the same way, with channel 2 at 220-239, and
-`tools/idn_test.py` is its test client.
-
-## Several lasers, one projector
-
-Each `[[fixture]]` block in the config gets its own DMX address, mode and zone: a rectangle of
-the output. Four zones make four independent "lasers" from one projector.
-
-<p align="center">
-  <img src="docs/media/zones.png" alt="Four fixtures, one per quadrant, each with its own pattern and colour" width="560">
-</p>
-<p align="center"><sub>Four fixtures in four quadrants of one output, renderer output.</sub></p>
-
-## How it compares
-
-| | Lights up a projector | Patchable DMX fixture | Plays ILDA |
-|---|---|---|---|
-| **BudgetLaser** | yes | yes | yes |
-| Laser show previewers | no, they draw on a monitor | they take DMX in | yes, for a real laser |
-| Audio-driven projector beam tools | yes | no | no |
-| VJ and media software | as content you build yourself | DIY | via add-ons for real lasers |
-| Entry-level DMX lasers | n/a, a real laser | yes, preset patterns | often not |
-
-We found no other tool that does all three (checked 2026-10-30). Products, prices and sources
-are in [docs/comparison.md](docs/comparison.md).
-
-## Raspberry Pi 5 appliance
-
-`deploy/install.sh` turns a Pi 5 into a box that boots straight into the output: a kiosk on the
-HDMI port, a systemd service, managed over SSH. CI builds and tests the Pi binary. The target is
-1080p60 with glow, which **has not been measured on a Pi yet**; [docs/raspberry-pi.md](docs/raspberry-pi.md)
-shows how to install it and measure it. Pi Zero and Pi 3 are not supported: their GPU lacks the
-graphics API the renderer needs.
-
-## Limitations
-
-- **A projector is not a laser.** It is dimmer and softer, it needs haze and a dark room, and
-  how well beams read depends on its brightness and your haze. Its black level shows as a faint
-  glow cone.
-- **No scan flicker yet.** ILDA files play at a fixed frame rate (30 fps by default).
-- **Not a replacement for a certified show laser.**
-- **Ether Dream and IDN are tested against their specs,** with the included test clients, not
-  yet with a laser show program. Tell us which program you used, whether it worked or not.
-
-## Safety
-
-BudgetLaser adds no light of its own, but your projector and your venue still have rules:
-
-- **Laser-phosphor ("laser") projectors are laser products.** The FDA classifies them under
-  [Laser Notice 57](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/classification-and-requirements-laser-illuminated-projectors-lips-laser-notice-no-57),
-  and Risk Group 3 projectors have a hazard distance. Read the projector manual and keep people
-  out of that distance.
-- **Don't point it into the audience** unless the projector manual allows it.
-- **Check venue rules and local permits** before you rig.
-- **Haze can set off smoke detectors.** Talk to the venue first.
-
-## Roadmap
-
-Not built yet:
-
-1. **Analogue ILDA input** (DB25), so a real laser DAC can drive it.
+</details>
 
 ## Documentation
 
 - [docs/reference.md](docs/reference.md): inputs and merging, channel tables, patterns, ILDA,
-  output and config options, platform notes.
+  Ether Dream, IDN, config, `--record`, platform notes.
 - [docs/raspberry-pi.md](docs/raspberry-pi.md): Pi 5 build, install, logs and the performance test.
 - [docs/comparison.md](docs/comparison.md): alternatives, with sources.
 - [budgetlaser.toml](budgetlaser.toml): the config; every key is optional and commented.
-
-## Contributing
-
-Issues and pull requests are welcome, one topic per pull request. Especially wanted: photos or
-video of BudgetLaser in real haze, and Pi 5 measurements. Run the tests with `cargo test`.
 
 ## License
 
