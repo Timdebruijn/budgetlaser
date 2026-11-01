@@ -18,7 +18,7 @@ Art-Net, sACN, ILDA files and laser show software in. Fans, tunnels and line art
 <p align="center">
   <b>Art-Net</b> &middot; <b>sACN</b> &middot; <b>Enttec DMX USB Pro</b> &middot; <b>ILDA .ild</b> &middot; <b>Ether Dream</b> &middot; <b>IDN</b> &middot; <b>QLC+ fixture</b>
   <br>
-  <a href="#try-it-without-hardware">Try it</a> &middot; <a href="#why-not-something-else">Why not something else?</a> &middot; <a href="docs/reference.md">Reference</a>
+  <a href="https://github.com/Timdebruijn/budgetlaser/releases/latest"><b>Download</b></a> &middot; <a href="#try-it-without-hardware">Try it</a> &middot; <a href="#why-not-something-else">Why not something else?</a> &middot; <a href="docs/reference.md">Reference</a>
 </p>
 
 ## The idea
@@ -35,16 +35,21 @@ to see a show without a laser on the desk.
 
 ## Try it without hardware
 
-No desk, no projector and no haze needed to see it work. You need a [Rust toolchain](https://rustup.rs);
-there are no prebuilt binaries yet.
+No desk, no projector and no haze needed to see it work. Download the archive for your system
+from [Releases](https://github.com/Timdebruijn/budgetlaser/releases/latest) (Linux x86_64,
+Raspberry Pi and other aarch64 Linux, macOS, Windows), unpack it and start it from a terminal in
+that folder:
 
 ```bash
-git clone https://github.com/Timdebruijn/budgetlaser && cd budgetlaser
-cargo build --release
-./target/release/budgetlaser budgetlaser.toml     # fullscreen; Esc quits
+./budgetlaser budgetlaser.toml     # fullscreen; Esc quits. Windows: budgetlaser.exe
 ```
 
-In a second terminal, drive it over Art-Net with plain Python (nothing to install):
+The builds are not signed yet. macOS blocks a downloaded binary until you run
+`xattr -dr com.apple.quarantine .` in the folder; Windows SmartScreen asks you to confirm with
+More info, Run anyway.
+
+In a second terminal, drive it over Art-Net with plain Python (nothing to install; on Windows,
+start each line with `python`):
 
 ```bash
 tools/dmx_test.py --pattern tunnel --beams 64
@@ -53,6 +58,19 @@ tools/dmx_test.py --pattern ilda --file 0 --color 255,255,255   # ilda/demo.ild
 ```
 
 Then point the projector at the room: lights off, hazer on.
+
+<details>
+<summary><b>Build from source</b></summary>
+
+With a [Rust toolchain](https://rustup.rs):
+
+```bash
+git clone https://github.com/Timdebruijn/budgetlaser && cd budgetlaser
+cargo build --release
+./target/release/budgetlaser budgetlaser.toml
+```
+
+</details>
 
 ## What you get
 
@@ -141,7 +159,7 @@ useful contributions:
 2. **Try your laser show software** over Ether Dream or IDN, and tell us what worked and what did not.
 3. **Measure the Pi 5.** The target is 1080p60 with glow; [docs/raspberry-pi.md](docs/raspberry-pi.md)
    shows how to measure it.
-4. **Prebuilt binaries** for macOS, Windows and Linux.
+4. **Code signing** for the macOS and Windows builds.
 
 Open an issue or a pull request, one topic per pull request; `cargo test` runs the tests. If
 BudgetLaser is what you wanted from a projector and a hazer, a star helps others find it.
@@ -167,7 +185,7 @@ Pattern ranges and every value: [docs/reference.md](docs/reference.md).
 `--record` renders offscreen in real time and writes BMP frames, with DMX input working as usual:
 
 ```bash
-./target/release/budgetlaser budgetlaser.toml --record out --seconds 10 &
+./budgetlaser budgetlaser.toml --record out --seconds 10 &
 tools/dmx_test.py --pattern fan --color 255,0,80 --seconds 10
 ```
 

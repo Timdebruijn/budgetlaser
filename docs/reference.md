@@ -5,6 +5,9 @@ playback, output options and the code layout.
 
 ## Build and run
 
+Release archives contain the binary next to `budgetlaser.toml`, `ilda/`, `fixtures/` and
+`tools/`; run `./budgetlaser budgetlaser.toml` in that folder. From source:
+
 ```bash
 cargo build --release
 ./target/release/budgetlaser budgetlaser.toml
