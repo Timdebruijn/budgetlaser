@@ -7,6 +7,7 @@ pub struct Config {
     pub input: Input,
     pub output: Output,
     pub ilda: Ilda,
+    pub etherdream: EtherDream,
     #[serde(rename = "fixture")]
     pub fixtures: Vec<Fixture>,
 }
@@ -87,6 +88,28 @@ impl Default for Ilda {
     }
 }
 
+/// Ether Dream DAC emulation for laser show software.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct EtherDream {
+    pub enabled: bool,
+    /// Draw the stream straight into `zone`. Off when only fixtures show it
+    /// (channel 2 = 200-219), or it is drawn twice.
+    pub direct: bool,
+    /// x, y, width, height as fractions of the output, origin top-left.
+    pub zone: [f32; 4],
+}
+
+impl Default for EtherDream {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            direct: true,
+            zone: [0.0, 0.0, 1.0, 1.0],
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields, default)]
 pub struct Output {
@@ -109,6 +132,7 @@ impl Default for Config {
             input: Input::default(),
             output: Output::default(),
             ilda: Ilda::default(),
+            etherdream: EtherDream::default(),
             fixtures: vec![Fixture::default()],
         }
     }
@@ -150,17 +174,26 @@ impl Config {
                     f.personality.footprint()
                 ));
             }
-            let [x, y, w, h] = f.zone;
-            let inside = |v: f32| (0.0..=1.0 + 1e-4).contains(&v);
-            if !(w > 0.0 && h > 0.0 && inside(x) && inside(y) && inside(x + w) && inside(y + h)) {
+            if !zone_ok(f.zone) {
                 return Err(format!(
                     "fixture {n}: zone {:?} must lie within 0..1 with positive size",
                     f.zone
                 ));
             }
         }
+        if !zone_ok(self.etherdream.zone) {
+            return Err(format!(
+                "etherdream.zone {:?} must lie within 0..1 with positive size",
+                self.etherdream.zone
+            ));
+        }
         Ok(self)
     }
+}
+
+fn zone_ok([x, y, w, h]: [f32; 4]) -> bool {
+    let inside = |v: f32| (0.0..=1.0 + 1e-4).contains(&v);
+    w > 0.0 && h > 0.0 && inside(x) && inside(y) && inside(x + w) && inside(y + h)
 }
 
 impl Default for Input {
@@ -267,6 +300,8 @@ mod tests {
         let c: Config = toml::from_str("[ilda]\ndir = \"/srv/ild\"\nframe_rate = 25.0").unwrap();
         assert_eq!((c.ilda.dir.as_str(), c.ilda.frame_rate), ("/srv/ild", 25.0));
         let bad: Config = toml::from_str("[ilda]\nframe_rate = 0.0").unwrap();
+        assert!(bad.validate().is_err());
+        let bad: Config = toml::from_str("[etherdream]\nzone = [0.5, 0.0, 0.6, 1.0]").unwrap();
         assert!(bad.validate().is_err());
         let shipped: Config = toml::from_str(include_str!("../budgetlaser.toml")).unwrap();
         assert!(shipped.validate().is_ok());

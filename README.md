@@ -26,6 +26,7 @@ device: all light is your projector's.
 - **A real DMX fixture.** Art-Net, sACN (E1.31) or Enttec DMX USB Pro; 13, 14, 17 or 18 channel
   modes; a QLC+ fixture definition is included.
 - **ILDA from your lighting desk.** Pick a `.ild` file and its speed on two DMX channels.
+- **Laser show software can drive it.** It shows up as an Ether Dream DAC on the network.
 - **Several lasers on one projector.** Split the output into zones, one fixture per zone.
 - **Free and open.** MIT license, one binary and one config file. Runs on macOS, Windows, Linux
   and the Raspberry Pi 5.
@@ -114,6 +115,15 @@ file is just another pattern:
 At red = green = blue = 255 the file shows its own colours; lower values tint it. Size,
 rotation, pan, tilt, dimmer and strobe apply too. ILDA formats 0, 1, 2, 4 and 5 are supported.
 
+## Drive it from laser show software
+
+Set `enabled = true` under `[etherdream]` in the config and BudgetLaser answers as an
+[Ether Dream](https://ether-dream.com) laser DAC: show software that supports one finds it on the
+network and streams to it like a real laser. The stream fills its own zone without any DMX, or
+set channel 2 of a fixture to 200-219 to show it there, with dimmer, size, pan, tilt and
+blackout from your desk. No laser software at hand? `tools/etherdream_test.py` streams a
+rainbow circle.
+
 ## Several lasers, one projector
 
 Each `[[fixture]]` block in the config gets its own DMX address, mode and zone: a rectangle of
@@ -151,8 +161,9 @@ graphics API the renderer needs.
   how well beams read depends on its brightness and your haze. Its black level shows as a faint
   glow cone.
 - **No scan flicker yet.** ILDA files play at a fixed frame rate (30 fps by default).
-- **Not a replacement for a certified show laser,** and it cannot take a laser DAC signal yet
-  (see the roadmap).
+- **Not a replacement for a certified show laser.**
+- **Ether Dream is tested against the protocol,** with the included test client, not yet with
+  a laser show program. Tell us which program you used, whether it worked or not.
 
 ## Safety
 
@@ -170,8 +181,7 @@ BudgetLaser adds no light of its own, but your projector and your venue still ha
 
 Not built yet:
 
-1. **Network laser DAC emulation** (Ether Dream, then IDN), so laser show software can drive the
-   projector as if it were a laser.
+1. **IDN input**, the ILDA network protocol, for software that speaks IDN instead of Ether Dream.
 2. **Analogue ILDA input** (DB25), so a real laser DAC can drive it.
 
 ## Documentation

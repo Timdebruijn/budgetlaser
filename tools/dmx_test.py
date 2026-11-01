@@ -5,6 +5,7 @@ Examples:
   tools/dmx_test.py --pattern tunnel --beams 64            # worst case for the Pi gate
   tools/dmx_test.py --host 192.168.1.50 --pattern fan --seconds 30
   tools/dmx_test.py --pattern ilda --file 0 --color 255,255,255  # file colours, still
+  tools/dmx_test.py --pattern etherdream --color 255,255,255     # show the Ether Dream stream
 """
 import argparse
 import math
@@ -23,6 +24,7 @@ PATTERNS = {
     "wave": 150,
     "polygon": 170,
     "ilda": 190,
+    "etherdream": 210,
 }
 
 
@@ -66,14 +68,15 @@ def main() -> None:
     try:
         while a.seconds <= 0 or time.monotonic() - t0 < a.seconds:
             t = time.monotonic() - t0
-            ilda = a.pattern == "ilda"  # full size, no rotation or pan sweep; plays at 1x
+            ilda = a.pattern == "ilda"  # plays at 1x
+            still = ilda or a.pattern == "etherdream"  # full size, no rotation or pan sweep
             universe = bytearray(512)
             ch = [
                 255,  # mode: on
                 PATTERNS[a.pattern],
-                255 if ilda else 200,  # size
-                0 if ilda else 150,  # rotation: static / clockwise, slow
-                128 if ilda else int(128 + 60 * math.sin(t)),  # pan sweep
+                255 if still else 200,  # size
+                0 if still else 150,  # rotation: static / clockwise, slow
+                128 if still else int(128 + 60 * math.sin(t)),  # pan sweep
                 128,  # tilt centre
                 r, g, b,
                 255,  # dimmer
