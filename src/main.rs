@@ -1,4 +1,5 @@
 mod config;
+mod etherdream;
 mod fixture;
 mod ilda;
 mod input;
@@ -9,7 +10,7 @@ mod render;
 use config::{Config, SignalLoss, Source};
 use fixture::Pattern;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::event::{ElementState, WindowEvent};
@@ -31,6 +32,9 @@ struct App {
     renderer: Option<render::Renderer>,
     fixtures: Vec<Fixture>,
     clips: Vec<ilda::Clip>,
+    dac: Option<Arc<Mutex<etherdream::Dac>>>,
+    /// Points the Ether Dream played since the previous frame.
+    dac_points: Vec<point::Point>,
     frame: point::Frame,
     segments: Vec<point::Segment>,
     scratch: Vec<point::Segment>,
@@ -124,6 +128,13 @@ impl App {
             }
         }
         let blackout = !ok && self.cfg.input.signal_loss == SignalLoss::Blackout;
+        match &self.dac {
+            Some(dac) => dac
+                .lock()
+                .unwrap()
+                .take(Instant::now(), &mut self.dac_points),
+            None => self.dac_points.clear(),
+        }
 
         self.segments.clear();
         self.batches.clear();
@@ -138,11 +149,16 @@ impl App {
             .map_or(&[][..], Vec::as_slice);
             f.phases
                 .tick_clip(clip.len(), &params, self.cfg.ilda.frame_rate, dt);
+            let points = match params.pattern {
+                Some(Pattern::EtherDream) => self.dac_points.as_slice(),
+                _ => clip
+                    .get(f.phases.clip_pos as usize)
+                    .map_or(&[][..], Vec::as_slice),
+            };
             pattern::build(
                 &params,
                 &f.phases,
-                clip.get(f.phases.clip_pos as usize)
-                    .map_or(&[], Vec::as_slice),
+                points,
                 self.cfg.output.dimmer_gamma,
                 &mut self.frame,
             );
@@ -154,6 +170,15 @@ impl App {
             self.batches.push(render::Batch {
                 range: start..self.segments.len(),
                 zone: f.cfg.zone,
+            });
+        }
+        if self.cfg.etherdream.direct && !self.dac_points.is_empty() {
+            point::segments(&self.dac_points, &mut self.scratch);
+            let start = self.segments.len();
+            self.segments.extend_from_slice(&self.scratch);
+            self.batches.push(render::Batch {
+                range: start..self.segments.len(),
+                zone: self.cfg.etherdream.zone,
             });
         }
         let presented = self
@@ -391,6 +416,13 @@ fn main() {
             }
         })
         .expect("spawn input ticker");
+    let dac = cfg.etherdream.enabled.then(|| {
+        let dac = Arc::new(Mutex::new(etherdream::Dac::new(Instant::now())));
+        if let Err(e) = etherdream::spawn(dac.clone()) {
+            log::error!("Ether Dream DAC not started: {e}");
+        }
+        dac
+    });
 
     let mut app = App {
         cfg: cfg.clone(),
@@ -407,6 +439,8 @@ fn main() {
             })
             .collect(),
         clips,
+        dac,
+        dac_points: Vec::new(),
         frame: point::Frame::default(),
         segments: Vec::new(),
         scratch: Vec::new(),

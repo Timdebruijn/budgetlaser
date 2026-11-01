@@ -48,6 +48,8 @@ pub enum Pattern {
     Polygon,
     /// Plays an .ild file from the ILDA directory.
     Ilda,
+    /// Shows the Ether Dream stream from laser software.
+    EtherDream,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -141,6 +143,7 @@ pub fn decode(ch: &[u8]) -> Params {
         140..=159 => Some(Pattern::Wave),
         160..=179 => Some(Pattern::Polygon),
         180..=199 => Some(Pattern::Ilda),
+        200..=219 => Some(Pattern::EtherDream),
         _ => None, // reserved
     };
     let rotation = match ch[3] {
@@ -257,7 +260,9 @@ mod tests {
             (179, Some(Pattern::Polygon)),
             (180, Some(Pattern::Ilda)),
             (199, Some(Pattern::Ilda)),
-            (200, None),
+            (200, Some(Pattern::EtherDream)),
+            (219, Some(Pattern::EtherDream)),
+            (220, None),
         ] {
             let mut c = ch;
             c[1] = v;
@@ -271,7 +276,7 @@ mod tests {
         ch[3] = 128;
         assert_eq!(decode(&ch).rotation, Rotation::Spin(-MAX_SPIN_RAD_S / 64.0));
         ch[0] = 9;
-        ch[1] = 200; // reserved
+        ch[1] = 220; // reserved
         ch[10] = 0;
         ch[11] = 0;
         let p = decode(&ch);

@@ -81,7 +81,8 @@ something per pattern:
 | 140-159 | Wave | 1-8 cycles | wave travels |
 | 160-179 | Polygon | 3-12 sides | outline breathes |
 | 180-199 | ILDA file | file number 0-255 | playback speed; 0 holds frame 0 |
-| 200-255 | reserved | | |
+| 200-219 | Ether Dream stream | - | - |
+| 220-255 | reserved | | |
 
 **ILDA files.** Put `.ild` files in the `[ilda] dir` (default `ilda/` next to the config
 file); they are loaded at start, sorted by file name, and the log lists each file with its
@@ -92,6 +93,25 @@ palette use the spec's default palette. ILDA files carry no timing: frames play 
 The file's own colours show at R = G = B = 255; lower values tint them. Size, rotation,
 pan/tilt, dimmer and strobe work as for the patterns. A file that fails to load keeps its
 number but draws nothing. New files need a restart.
+
+**Ether Dream.** With `[etherdream] enabled = true` BudgetLaser emulates an Ether Dream laser
+DAC: TCP 7765 for the point stream, a discovery broadcast every second on UDP 7654, a
+1799-point buffer and up to 100,000 points per second, as the original firmware reports. The
+DAC plays its buffer at the point rate the software sets; every render frame draws the points
+played since the previous frame. With `glow = true` (default) the glow stands in for the
+persistence of a scanning beam; without it each frame shows only its own slice, so a slow scan
+flickers as it would on a laser. Black points (R = G = B = 0) are blanked moves; the intensity
+and user channels are ignored. An e-stop from the software blanks the output until the software
+clears it and starts a new stream. One client at a time: a second one waits until the first
+disconnects. The broadcast goes out on the default network interface only; on another
+interface, enter the IP address in the software if it cannot find the DAC.
+
+The stream goes two ways, both at once if you like. `direct = true` (default) draws it into
+`[etherdream] zone` without DMX. A fixture with channel 2 at 200-219 shows it too, with size,
+rotation, pan/tilt, colour tint (R = G = B = 255 keeps the stream's colours), dimmer, strobe and
+blackout from DMX. Set `direct = false` when a fixture shows it, or it is drawn twice. DMX
+signal loss does not blank the direct stream. `tools/etherdream_test.py` streams a test circle
+and `--discover` lists DACs that broadcast.
 
 Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
 
@@ -106,12 +126,16 @@ Platform notes:
 - macOS asks once to allow incoming connections for the binary (firewall). Deny = no DMX
   from the network; Art-Net or sACN unicast to 127.0.0.1 still works.
 - Windows needs a firewall rule for UDP 6454 / 5568; USB Pro appears as a COM port.
+- The Ether Dream DAC needs incoming TCP 7765 and sends broadcasts to UDP 7654. macOS may
+  also ask for local network access; until it is allowed the log warns that the broadcast
+  fails, and software cannot discover the DAC.
 
 ## Layout
 
 Single crate; modules mirror the planned crates: `point` (point-stream contract), `fixture`
 (channel decode, smoothing), `pattern` (generators + transform chain), `input/*` (sources,
-triple buffer), `ilda` (.ild reader), `render` (wgpu), `main` (config, window, loop).
+triple buffer), `ilda` (.ild reader), `etherdream` (DAC emulation), `render` (wgpu), `main`
+(config, window, loop).
 
 ```bash
 cargo test

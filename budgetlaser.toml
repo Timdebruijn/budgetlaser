@@ -25,6 +25,15 @@ exposure = 1.0
 dir = "ilda"               # relative to this config file
 frame_rate = 30.0          # frames per second at channel 13 = 128
 
+# Ether Dream DAC emulation: laser show software finds BudgetLaser as a DAC and streams
+# points to it (TCP 7765, discovery broadcast on UDP 7654). direct draws the stream into
+# zone; fixtures show it as well on channel 2 = 200-219, with dimmer, size and pan/tilt
+# from DMX. Set direct = false when a fixture shows it, or it is drawn twice.
+[etherdream]
+enabled = false
+direct = true
+zone = [0.0, 0.0, 1.0, 1.0]
+
 # One block per virtual fixture (13, 14, 17 or 18 channels, see personality). Without
 # any [[fixture]] block there is one fixture at address 1 filling the output. zone = [x, y, width, height] as fractions of
 # the output, origin top-left; the scan field is placed in it according to output.mapping.
