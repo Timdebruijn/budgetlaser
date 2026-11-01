@@ -34,6 +34,14 @@ enabled = false
 direct = true
 zone = [0.0, 0.0, 1.0, 1.0]
 
+# IDN receiver (ILDA Digital Network): laser show software finds BudgetLaser with an
+# IDN scan and streams to UDP 7255. direct and zone as above; fixtures show it on
+# channel 2 = 220-239.
+[idn]
+enabled = false
+direct = true
+zone = [0.0, 0.0, 1.0, 1.0]
+
 # One block per virtual fixture (13, 14, 17 or 18 channels, see personality). Without
 # any [[fixture]] block there is one fixture at address 1 filling the output. zone = [x, y, width, height] as fractions of
 # the output, origin top-left; the scan field is placed in it according to output.mapping.

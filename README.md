@@ -26,7 +26,8 @@ device: all light is your projector's.
 - **A real DMX fixture.** Art-Net, sACN (E1.31) or Enttec DMX USB Pro; 13, 14, 17 or 18 channel
   modes; a QLC+ fixture definition is included.
 - **ILDA from your lighting desk.** Pick a `.ild` file and its speed on two DMX channels.
-- **Laser show software can drive it.** It shows up as an Ether Dream DAC on the network.
+- **Laser show software can drive it.** It shows up on the network as an Ether Dream DAC or an
+  IDN projector.
 - **Several lasers on one projector.** Split the output into zones, one fixture per zone.
 - **Free and open.** MIT license, one binary and one config file. Runs on macOS, Windows, Linux
   and the Raspberry Pi 5.
@@ -124,6 +125,10 @@ set channel 2 of a fixture to 200-219 to show it there, with dimmer, size, pan, 
 blackout from your desk. No laser software at hand? `tools/etherdream_test.py` streams a
 rainbow circle.
 
+Software that speaks IDN, the ILDA Digital Network, finds BudgetLaser as an IDN projector
+with `enabled = true` under `[idn]`. It works the same way, with channel 2 at 220-239, and
+`tools/idn_test.py` is its test client.
+
 ## Several lasers, one projector
 
 Each `[[fixture]]` block in the config gets its own DMX address, mode and zone: a rectangle of
@@ -162,8 +167,8 @@ graphics API the renderer needs.
   glow cone.
 - **No scan flicker yet.** ILDA files play at a fixed frame rate (30 fps by default).
 - **Not a replacement for a certified show laser.**
-- **Ether Dream is tested against the protocol,** with the included test client, not yet with
-  a laser show program. Tell us which program you used, whether it worked or not.
+- **Ether Dream and IDN are tested against their specs,** with the included test clients, not
+  yet with a laser show program. Tell us which program you used, whether it worked or not.
 
 ## Safety
 
@@ -181,8 +186,7 @@ BudgetLaser adds no light of its own, but your projector and your venue still ha
 
 Not built yet:
 
-1. **IDN input**, the ILDA network protocol, for software that speaks IDN instead of Ether Dream.
-2. **Analogue ILDA input** (DB25), so a real laser DAC can drive it.
+1. **Analogue ILDA input** (DB25), so a real laser DAC can drive it.
 
 ## Documentation
 

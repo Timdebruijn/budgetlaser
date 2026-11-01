@@ -82,7 +82,8 @@ something per pattern:
 | 160-179 | Polygon | 3-12 sides | outline breathes |
 | 180-199 | ILDA file | file number 0-255 | playback speed; 0 holds frame 0 |
 | 200-219 | Ether Dream stream | - | - |
-| 220-255 | reserved | | |
+| 220-239 | IDN stream | - | - |
+| 240-255 | reserved | | |
 
 **ILDA files.** Put `.ild` files in the `[ilda] dir` (default `ilda/` next to the config
 file); they are loaded at start, sorted by file name, and the log lists each file with its
@@ -113,6 +114,20 @@ blackout from DMX. Set `direct = false` when a fixture shows it, or it is drawn 
 signal loss does not blank the direct stream. `tools/etherdream_test.py` streams a test circle
 and `--discover` lists DACs that broadcast.
 
+**IDN.** With `[idn] enabled = true` BudgetLaser is an IDN projector (ILDA Digital Network,
+IDN-Stream revision 002 and the IDN-Hello draft of 2022): it answers scans, service map
+requests and pings on UDP 7255 and offers one laser projector service. Software streams
+IDN-RT channel messages to it in continuous graphic mode (wave samples, drawn as they arrive)
+or discrete graphic mode (frames, repeated until the next one, or drawn once with the once
+flag). The sample layout comes from the channel's tag dictionary: X and Y at any precision
+and colour lines by wavelength, each mapped to the nearest of red (600 nm and up), yellow,
+green, cyan or blue (below 480 nm); intensity, Z and beam brush are ignored, as is a second
+scan head. Frames split into IDN fragments are dropped; software normally relies on IP
+fragmentation instead. One client at a time: a second gets "occupied" until the first closes
+or sends nothing for 1 s, which also blanks its frames. `[idn] direct` and `zone` work as for
+the Ether Dream, and a fixture with channel 2 at 220-239 shows the IDN stream.
+`tools/idn_test.py` streams a test circle in either mode and `--scan` lists IDN units.
+
 Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
 
 ## Output
@@ -129,13 +144,15 @@ Platform notes:
 - The Ether Dream DAC needs incoming TCP 7765 and sends broadcasts to UDP 7654. macOS may
   also ask for local network access; until it is allowed the log warns that the broadcast
   fails, and software cannot discover the DAC.
+- IDN needs incoming UDP 7255. Scans arrive as broadcasts, which the macOS firewall drops
+  until it allows the binary (see above); software can still stream to the IP address.
 
 ## Layout
 
 Single crate; modules mirror the planned crates: `point` (point-stream contract), `fixture`
 (channel decode, smoothing), `pattern` (generators + transform chain), `input/*` (sources,
-triple buffer), `ilda` (.ild reader), `etherdream` (DAC emulation), `render` (wgpu), `main`
-(config, window, loop).
+triple buffer), `ilda` (.ild reader), `etherdream` (DAC emulation), `idn` (IDN receiver),
+`render` (wgpu), `main` (config, window, loop).
 
 ```bash
 cargo test

@@ -1,6 +1,7 @@
 mod config;
 mod etherdream;
 mod fixture;
+mod idn;
 mod ilda;
 mod input;
 mod pattern;
@@ -35,6 +36,9 @@ struct App {
     dac: Option<Arc<Mutex<etherdream::Dac>>>,
     /// Points the Ether Dream played since the previous frame.
     dac_points: Vec<point::Point>,
+    idn: Option<Arc<Mutex<idn::Idn>>>,
+    /// Points the IDN stream delivered since the previous frame.
+    idn_points: Vec<point::Point>,
     frame: point::Frame,
     segments: Vec<point::Segment>,
     scratch: Vec<point::Segment>,
@@ -135,6 +139,13 @@ impl App {
                 .take(Instant::now(), &mut self.dac_points),
             None => self.dac_points.clear(),
         }
+        match &self.idn {
+            Some(idn) => idn
+                .lock()
+                .unwrap()
+                .take(Instant::now(), &mut self.idn_points),
+            None => self.idn_points.clear(),
+        }
 
         self.segments.clear();
         self.batches.clear();
@@ -151,6 +162,7 @@ impl App {
                 .tick_clip(clip.len(), &params, self.cfg.ilda.frame_rate, dt);
             let points = match params.pattern {
                 Some(Pattern::EtherDream) => self.dac_points.as_slice(),
+                Some(Pattern::Idn) => self.idn_points.as_slice(),
                 _ => clip
                     .get(f.phases.clip_pos as usize)
                     .map_or(&[][..], Vec::as_slice),
@@ -172,13 +184,19 @@ impl App {
                 zone: f.cfg.zone,
             });
         }
-        if self.cfg.etherdream.direct && !self.dac_points.is_empty() {
-            point::segments(&self.dac_points, &mut self.scratch);
+        for (cfg, points) in [
+            (&self.cfg.etherdream, &self.dac_points),
+            (&self.cfg.idn, &self.idn_points),
+        ] {
+            if !cfg.direct || points.is_empty() {
+                continue;
+            }
+            point::segments(points, &mut self.scratch);
             let start = self.segments.len();
             self.segments.extend_from_slice(&self.scratch);
             self.batches.push(render::Batch {
                 range: start..self.segments.len(),
-                zone: self.cfg.etherdream.zone,
+                zone: cfg.zone,
             });
         }
         let presented = self
@@ -423,6 +441,13 @@ fn main() {
         }
         dac
     });
+    let idn = cfg.idn.enabled.then(|| {
+        let idn = Arc::new(Mutex::new(idn::Idn::default()));
+        if let Err(e) = idn::spawn(idn.clone()) {
+            log::error!("IDN receiver not started: {e}");
+        }
+        idn
+    });
 
     let mut app = App {
         cfg: cfg.clone(),
@@ -441,6 +466,8 @@ fn main() {
         clips,
         dac,
         dac_points: Vec::new(),
+        idn,
+        idn_points: Vec::new(),
         frame: point::Frame::default(),
         segments: Vec::new(),
         scratch: Vec::new(),

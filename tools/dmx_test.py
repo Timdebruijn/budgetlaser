@@ -6,6 +6,7 @@ Examples:
   tools/dmx_test.py --host 192.168.1.50 --pattern fan --seconds 30
   tools/dmx_test.py --pattern ilda --file 0 --color 255,255,255  # file colours, still
   tools/dmx_test.py --pattern etherdream --color 255,255,255     # show the Ether Dream stream
+  tools/dmx_test.py --pattern idn --color 255,0,0                # show the IDN stream, tinted red
 """
 import argparse
 import math
@@ -25,6 +26,7 @@ PATTERNS = {
     "polygon": 170,
     "ilda": 190,
     "etherdream": 210,
+    "idn": 230,
 }
 
 
@@ -69,7 +71,7 @@ def main() -> None:
         while a.seconds <= 0 or time.monotonic() - t0 < a.seconds:
             t = time.monotonic() - t0
             ilda = a.pattern == "ilda"  # plays at 1x
-            still = ilda or a.pattern == "etherdream"  # full size, no rotation or pan sweep
+            still = ilda or a.pattern in ("etherdream", "idn")  # full size, no rotation or pan sweep
             universe = bytearray(512)
             ch = [
                 255,  # mode: on
