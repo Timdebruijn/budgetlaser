@@ -3,8 +3,10 @@
 Target: Raspberry Pi OS Lite (trixie), no desktop. BudgetLaser runs fullscreen inside the
 `cage` Wayland kiosk on tty1, started by systemd.
 
-1. Get an aarch64 binary: download the `budgetlaser-aarch64-linux` artifact from a CI run,
-   or build it on an Apple Silicon Mac in an arm64 container:
+1. Get an aarch64 binary: download `budgetlaser-aarch64-linux.tar.gz` from
+   [Releases](https://github.com/Timdebruijn/budgetlaser/releases/latest) (it contains the
+   binary, `budgetlaser.toml` and `deploy/`), take the `budgetlaser-aarch64-linux` artifact
+   from a CI run, or build it on an Apple Silicon Mac in an arm64 container:
 
    ```bash
    docker run --rm --platform linux/arm64 -v "$PWD":/src -w /src -e CARGO_TARGET_DIR=/src/target/aarch64-linux rust:1.99.1-bookworm cargo build --release --locked
