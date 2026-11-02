@@ -4,7 +4,8 @@ struct Uniforms {
     decay: f32,             // glow decay per frame (0 = off)
     exposure: f32,
     gamma_out: f32,         // 1 = apply gamma in shader (non-sRGB surface)
-    _pad: vec2<f32>,
+    show_masks: f32,        // 1 = tint masked areas so they can be lined up
+    _pad: f32,
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
 
@@ -68,6 +69,8 @@ fn fs_line(i: LineOut) -> @location(0) vec4<f32> {
 
 @group(1) @binding(0) var src: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
+// 0 inside a [[mask]], 1 elsewhere; one texel per output pixel.
+@group(2) @binding(0) var mask: texture_2d<f32>;
 
 struct FsOut {
     @builtin(position) pos: vec4<f32>,
@@ -93,5 +96,8 @@ fn fs_tonemap(i: FsOut) -> @location(0) vec4<f32> {
     let hdr = max(textureSample(src, samp, i.uv).rgb * u.exposure, vec3<f32>(0.0));
     var c = 1.0 - exp(-hdr);               // soft shoulder, black stays exactly black
     if (u.gamma_out > 0.5) { c = pow(c, vec3<f32>(1.0 / 2.2)); }
+    // Last step, so no source and no glow reaches a masked pixel.
+    let m = textureLoad(mask, vec2<i32>(i.pos.xy), 0).r;
+    c = c * m + vec3<f32>(0.25, 0.0, 0.0) * u.show_masks * (1.0 - m);
     return vec4<f32>(c, 1.0);
 }

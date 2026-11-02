@@ -11,6 +11,16 @@ pub struct Config {
     pub idn: Stream,
     #[serde(rename = "fixture")]
     pub fixtures: Vec<Fixture>,
+    #[serde(rename = "mask")]
+    pub masks: Vec<Mask>,
+}
+
+/// An area of the output where nothing is drawn, from any source (e.g. the audience).
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct Mask {
+    /// Polygon corners as fractions of the output, origin top-left.
+    pub points: Vec<[f32; 2]>,
 }
 
 /// One virtual fixture: a DMX footprint drawn into its own zone of the output.
@@ -125,6 +135,8 @@ pub struct Output {
     /// Internal render resolution relative to the window (0.5 = half).
     pub internal_scale: f32,
     pub exposure: f32,
+    /// Tint masked areas faint red, to line masks up in the room.
+    pub show_masks: bool,
 }
 
 impl Default for Config {
@@ -136,6 +148,7 @@ impl Default for Config {
             etherdream: Stream::default(),
             idn: Stream::default(),
             fixtures: vec![Fixture::default()],
+            masks: Vec::new(),
         }
     }
 }
@@ -191,6 +204,15 @@ impl Config {
                 ));
             }
         }
+        for (i, m) in self.masks.iter().enumerate() {
+            let inside = |v: f32| (0.0..=1.0).contains(&v);
+            if m.points.len() < 3 || !m.points.iter().flatten().all(|&v| inside(v)) {
+                return Err(format!(
+                    "mask {}: points need at least 3 corners within 0..1",
+                    i + 1
+                ));
+            }
+        }
         Ok(self)
     }
 }
@@ -229,6 +251,7 @@ impl Default for Output {
             dimmer_gamma: 2.2,
             internal_scale: 1.0,
             exposure: 1.0,
+            show_masks: false,
         }
     }
 }
@@ -311,6 +334,19 @@ mod tests {
         assert!(bad.validate().is_err());
         let shipped: Config = toml::from_str(include_str!("../budgetlaser.toml")).unwrap();
         assert!(shipped.validate().is_ok());
+    }
+
+    #[test]
+    fn masks_parse_and_validate() {
+        let ok = "[[mask]]\npoints = [[0.0, 0.7], [1.0, 0.7], [1.0, 1.0], [0.0, 1.0]]";
+        let c: Config = toml::from_str(ok).unwrap();
+        assert_eq!(c.masks[0].points.len(), 4);
+        assert!(c.validate().is_ok());
+        let bad: Config = toml::from_str("[[mask]]\npoints = [[0.0, 0.7], [1.0, 0.7]]").unwrap();
+        assert!(bad.validate().is_err());
+        let bad: Config =
+            toml::from_str("[[mask]]\npoints = [[0.0, 70.0], [1.0, 70.0], [1.0, 1.0]]").unwrap();
+        assert!(bad.validate().is_err());
     }
 
     #[test]

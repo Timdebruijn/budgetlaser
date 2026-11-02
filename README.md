@@ -148,6 +148,10 @@ found no free tool that does all three (checked 2026-11-01). Products, prices an
   and Risk Group 3 projectors have a hazard distance. Follow the projector manual, don't aim it
   into the audience unless the manual allows it, check venue rules and permits, and tell the
   venue about the haze: it can set off smoke detectors.
+- **Masks keep beams out of areas you choose.** A `[[mask]]` polygon in the config blanks that
+  part of the image for every source, and no desk can switch it off
+  ([reference](docs/reference.md#masks)). It is an aid, not a certified safety system, and the
+  projector's black level still reaches the masked area.
 
 ## Status and help wanted
 

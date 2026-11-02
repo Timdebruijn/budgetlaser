@@ -1,7 +1,8 @@
 //! wgpu pipeline: capsules (segments/dots) additively into an HDR target,
-//! optional glow by decaying the previous target, then tonemap to the surface.
+//! optional glow by decaying the previous target, then tonemap to the surface,
+//! where `[[mask]]` areas are cut out of the finished frame.
 
-use crate::config::{Mapping, Output as Cfg};
+use crate::config::{Mapping, Mask, Output as Cfg};
 use crate::point::Segment;
 use std::ops::Range;
 use std::sync::Arc;
@@ -18,7 +19,8 @@ struct Uniforms {
     decay: f32,
     exposure: f32,
     gamma_out: f32,
-    _pad: [f32; 2],
+    show_masks: f32,
+    _pad: f32,
 }
 
 /// Segments of one fixture and the zone of the output it draws into.
@@ -56,6 +58,40 @@ fn scissor(r: [f32; 4], w: u32, h: u32) -> (u32, u32, u32, u32) {
     (x0, y0, x1 - x0, y1 - y0)
 }
 
+/// One byte per output pixel, top row first: 0 where the pixel centre lies inside any
+/// mask polygon, 255 elsewhere. Nonzero winding: a self-crossing outline leaves no
+/// unmasked hole where it overlaps itself.
+fn mask_pixels(masks: &[Mask], w: u32, h: u32) -> Vec<u8> {
+    let mut px = vec![255u8; (w * h) as usize];
+    let col = |v: f32| ((v * w as f32 - 0.5).ceil().max(0.0) as u32).min(w) as usize;
+    let mut xs = Vec::new();
+    for m in masks {
+        let p = &m.points;
+        for row in 0..h {
+            let y = (row as f32 + 0.5) / h as f32;
+            xs.clear();
+            for (i, a) in p.iter().enumerate() {
+                let b = p[(i + 1) % p.len()];
+                if (a[1] <= y) != (b[1] <= y) {
+                    let x = a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+                    xs.push((x, if a[1] < b[1] { 1 } else { -1 }));
+                }
+            }
+            xs.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let line = (row * w) as usize;
+            let mut winding = 0;
+            for pair in xs.windows(2) {
+                winding += pair[0].1;
+                if winding != 0 {
+                    // Pixels whose centre (x + 0.5) / w lies between the two crossings.
+                    px[line + col(pair[0].0)..line + col(pair[1].0)].fill(0);
+                }
+            }
+        }
+    }
+    px
+}
+
 pub struct Renderer {
     /// None when rendering offscreen (`--record`).
     surface: Option<wgpu::Surface<'static>>,
@@ -71,6 +107,8 @@ pub struct Renderer {
     line_pipeline: wgpu::RenderPipeline,
     decay_pipeline: wgpu::RenderPipeline,
     tonemap_pipeline: wgpu::RenderPipeline,
+    masks: Vec<Mask>,
+    mask_bg: wgpu::BindGroup,
     segments: wgpu::Buffer,
     staging: Vec<Segment>,
     hdr: [(wgpu::TextureView, wgpu::BindGroup); 2],
@@ -84,6 +122,7 @@ impl Renderer {
         window: Arc<Window>,
         display: winit::event_loop::OwnedDisplayHandle,
         cfg: Cfg,
+        masks: Vec<Mask>,
     ) -> Self {
         let size = window.inner_size();
         let instance = wgpu::Instance::new(
@@ -118,11 +157,11 @@ impl Renderer {
         config.present_mode = wgpu::PresentMode::Fifo; // vsync, no tearing
         config.desired_maximum_frame_latency = 1;
         surface.configure(&device, &config);
-        Self::build(device, queue, config, cfg, Some(surface))
+        Self::build(device, queue, config, cfg, masks, Some(surface))
     }
 
     /// Renders into a texture instead of a window; read frames with `read_frame`.
-    pub fn offscreen(width: u32, height: u32, cfg: Cfg) -> Self {
+    pub fn offscreen(width: u32, height: u32, cfg: Cfg, masks: Vec<Mask>) -> Self {
         let instance =
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
@@ -148,7 +187,7 @@ impl Renderer {
             view_formats: Vec::new(),
             color_space: wgpu::SurfaceColorSpace::Auto,
         };
-        Self::build(device, queue, config, cfg, None)
+        Self::build(device, queue, config, cfg, masks, None)
     }
 
     fn build(
@@ -156,6 +195,7 @@ impl Renderer {
         queue: wgpu::Queue,
         config: wgpu::SurfaceConfiguration,
         cfg: Cfg,
+        masks: Vec<Mask>,
         surface: Option<wgpu::Surface<'static>>,
     ) -> Self {
         let format = config.format;
@@ -243,6 +283,11 @@ impl Renderer {
             bind_group_layouts: &[Some(&uniform_layout), Some(&tex_layout)],
             immediate_size: 0,
         });
+        let tonemap_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[Some(&uniform_layout), Some(&tex_layout), Some(&tex_layout)],
+            immediate_size: 0,
+        });
 
         let seg_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Segment>() as u64,
@@ -300,7 +345,7 @@ impl Renderer {
             "vs_fullscreen",
             "fs_tonemap",
             &[],
-            &fs_layout,
+            &tonemap_layout,
             format,
             wgpu::BlendState::REPLACE,
         );
@@ -314,6 +359,10 @@ impl Renderer {
 
         let hdr_size = target_size(&config, cfg.internal_scale);
         let hdr = make_targets(&device, &tex_layout, &sampler, hdr_size);
+        if cfg.show_masks && !masks.is_empty() {
+            log::warn!("show_masks is on: masked areas are lit red, turn it off for the show");
+        }
+        let mask_bg = make_mask(&device, &queue, &tex_layout, &sampler, &masks, &config);
         Self {
             surface,
             offscreen,
@@ -328,6 +377,8 @@ impl Renderer {
             line_pipeline,
             decay_pipeline,
             tonemap_pipeline,
+            masks,
+            mask_bg,
             segments,
             staging: Vec::new(),
             hdr,
@@ -359,6 +410,14 @@ impl Renderer {
             self.hdr_size.1
         );
         self.hdr = make_targets(&self.device, &self.tex_layout, &self.sampler, self.hdr_size);
+        self.mask_bg = make_mask(
+            &self.device,
+            &self.queue,
+            &self.tex_layout,
+            &self.sampler,
+            &self.masks,
+            &self.config,
+        );
         self.first = true;
     }
 
@@ -399,7 +458,8 @@ impl Renderer {
                 } else {
                     1.0
                 },
-                _pad: [0.0; 2],
+                show_masks: if self.cfg.show_masks { 1.0 } else { 0.0 },
+                _pad: 0.0,
             }),
         );
         // Map each fixture's scan field into its zone; remember the scissor per draw.
@@ -487,6 +547,7 @@ impl Renderer {
             pass.set_pipeline(&self.tonemap_pipeline);
             pass.set_bind_group(0, &self.uniform_bg, &[]);
             pass.set_bind_group(1, &self.hdr[cur].1, &[]);
+            pass.set_bind_group(2, &self.mask_bg, &[]);
             pass.draw(0..3, 0..1);
         }
         self.queue.submit([enc.finish()]);
@@ -546,6 +607,58 @@ impl Renderer {
 fn target_size(config: &wgpu::SurfaceConfiguration, scale: f32) -> (u32, u32) {
     let f = |v: u32| ((v as f32 * scale).round() as u32).max(1);
     (f(config.width), f(config.height))
+}
+
+/// The mask as a texture at output resolution, so `internal_scale` does not blur it.
+fn make_mask(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    masks: &[Mask],
+    config: &wgpu::SurfaceConfiguration,
+) -> wgpu::BindGroup {
+    let (w, h) = (config.width, config.height);
+    let size = wgpu::Extent3d {
+        width: w,
+        height: h,
+        depth_or_array_layers: 1,
+    };
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("mask"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        tex.as_image_copy(),
+        &mask_pixels(masks, w, h),
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(w),
+            rows_per_image: None,
+        },
+        size,
+    );
+    let view = tex.create_view(&Default::default());
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: wgpu::BindingResource::TextureView(&view),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: wgpu::BindingResource::Sampler(sampler),
+            },
+        ],
+    })
 }
 
 fn make_targets(
@@ -609,5 +722,32 @@ mod tests {
         let s = scan_rect([0.5, 0.5, 0.5, 0.5], Mapping::Stretch, 100.0, 100.0);
         assert_eq!(scissor(s, 100, 100), (50, 50, 50, 50));
         assert_eq!(scissor([99.9, 0.0, 5.0, 5.0], 100, 100), (99, 0, 1, 5));
+    }
+
+    #[test]
+    fn masks_cover_pixel_centres() {
+        let m = |points: &[[f32; 2]]| Mask {
+            points: points.to_vec(),
+        };
+        // Bottom 30% of a 10x10 output: rows 7-9, every column.
+        let band = m(&[[0.0, 0.7], [1.0, 0.7], [1.0, 1.0], [0.0, 1.0]]);
+        let px = mask_pixels(std::slice::from_ref(&band), 10, 10);
+        assert!(px[..70].iter().all(|&v| v == 255));
+        assert!(px[70..].iter().all(|&v| v == 0));
+        // A triangle over the left half; overlapping masks add up, not cancel.
+        let tri = m(&[[0.0, 0.0], [0.5, 1.0], [0.0, 1.0]]);
+        let px = mask_pixels(&[band, tri], 10, 10);
+        assert_eq!(&px[..10], &[255; 10]); // row 0: apex has no pixel centre
+        assert_eq!(&px[50..55], &[0, 0, 0, 255, 255]); // row 5: x < 0.275
+        assert!(px[70..].iter().all(|&v| v == 0));
+        assert!(mask_pixels(&[], 4, 4).iter().all(|&v| v == 255));
+        // A five-pointed star drawn in one stroke: its centre stays masked.
+        let star: Vec<[f32; 2]> = (0..5)
+            .map(|k| {
+                let t = (k * 2) as f32 * std::f32::consts::TAU / 5.0;
+                [0.5 + 0.5 * t.sin(), 0.5 - 0.5 * t.cos()]
+            })
+            .collect();
+        assert_eq!(mask_pixels(&[m(&star)], 10, 10)[55], 0);
     }
 }
