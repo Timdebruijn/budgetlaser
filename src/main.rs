@@ -262,6 +262,7 @@ impl ApplicationHandler for App {
             window.clone(),
             event_loop.owned_display_handle(),
             self.cfg.output.clone(),
+            self.cfg.masks.clone(),
         ));
         self.window = Some(window);
         // Start measuring 1 s after window and GPU setup: the first frames include
@@ -308,7 +309,12 @@ fn record(mut app: App, dir: &Path, seconds: f64, (w, h): (u32, u32)) {
         eprintln!("{}: {e}", dir.display());
         std::process::exit(2);
     }
-    app.renderer = Some(render::Renderer::offscreen(w, h, app.cfg.output.clone()));
+    app.renderer = Some(render::Renderer::offscreen(
+        w,
+        h,
+        app.cfg.output.clone(),
+        app.cfg.masks.clone(),
+    ));
     app.stats = FrameStats::new(FPS);
     app.last_tick = app.now();
     let t0 = Instant::now();

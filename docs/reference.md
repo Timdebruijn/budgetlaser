@@ -140,6 +140,24 @@ Vsync (Fifo), additive HDR line rendering with optional glow (`glow_decay` per f
 `internal_scale = 0.5` renders at half resolution on weak GPUs. `mapping = "fit"` keeps the
 square scan field centred; `"stretch"` fills the width.
 
+### Masks
+
+Each `[[mask]]` block is a polygon, as corners in fractions of the output (origin top-left),
+where nothing is drawn: use it to keep beams out of the audience, a balcony or a door.
+
+```toml
+[[mask]]                   # bottom 30% of the image
+points = [[0.0, 0.7], [1.0, 0.7], [1.0, 1.0], [0.0, 1.0]]
+```
+
+Masks are cut out of the finished frame at output resolution, after glow, so they hold for
+every fixture, ILDA file and Ether Dream or IDN stream, whatever the mapping, zones or
+pan/tilt. They are set in the config only; no DMX channel can switch them off. To line them
+up, set `[output] show_masks = true`: masked areas turn dim red. Turn it off for the show.
+
+A masked area gets the projector's black level, not darkness, and a mask is no certified
+safety system: the projector manual and the venue's rules still apply.
+
 Platform notes:
 - macOS asks once to allow incoming connections for the binary (firewall). Deny = no DMX
   from the network; Art-Net or sACN unicast to 127.0.0.1 still works.
