@@ -15,12 +15,19 @@ pub struct Config {
     pub masks: Vec<Mask>,
 }
 
-/// An area of the output where nothing is drawn, from any source (e.g. the audience).
+/// An area of the output that is blanked or dimmed (e.g. the audience).
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Mask {
     /// Polygon corners as fractions of the output, origin top-left.
     pub points: Vec<[f32; 2]>,
+    /// Share of the light let through: 0 blanks (the default), 1 changes nothing.
+    #[serde(default)]
+    pub dim: f32,
+    /// Fixture numbers (1 = the first [[fixture]]) the mask applies to; empty means
+    /// the whole output, every source included.
+    #[serde(default)]
+    pub fixtures: Vec<usize>,
 }
 
 /// One virtual fixture: a DMX footprint drawn into its own zone of the output.
@@ -212,6 +219,16 @@ impl Config {
                     i + 1
                 ));
             }
+            if !inside(m.dim) {
+                return Err(format!("mask {}: dim {} must be 0..1", i + 1, m.dim));
+            }
+            let n = self.fixtures.len();
+            if let Some(f) = m.fixtures.iter().find(|&&f| !(1..=n).contains(&f)) {
+                return Err(format!(
+                    "mask {}: fixture {f} does not exist (there are {n})",
+                    i + 1
+                ));
+            }
         }
         Ok(self)
     }
@@ -347,6 +364,17 @@ mod tests {
         let bad: Config =
             toml::from_str("[[mask]]\npoints = [[0.0, 70.0], [1.0, 70.0], [1.0, 1.0]]").unwrap();
         assert!(bad.validate().is_err());
+        let tri = "points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]";
+        let check = |extra: &str| {
+            toml::from_str::<Config>(&format!("[[mask]]\n{tri}\n{extra}"))
+                .unwrap()
+                .validate()
+                .is_ok()
+        };
+        assert!(check("dim = 0.25\nfixtures = [1]"));
+        assert!(!check("dim = 1.5"));
+        assert!(!check("fixtures = [2]")); // only one fixture by default
+        assert!(!check("fixtures = [0]"));
     }
 
     #[test]
