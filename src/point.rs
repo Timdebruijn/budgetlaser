@@ -60,27 +60,76 @@ pub struct Segment {
 /// colour. A blanked jump onto the same spot, or an isolated first point, is a dot.
 pub fn segments(points: &[Point], out: &mut Vec<Segment>) {
     out.clear();
-    for (i, p) in points.iter().enumerate() {
-        if p.blank {
-            continue;
-        }
-        let from = match i.checked_sub(1) {
-            Some(j) => [points[j].x, points[j].y],
-            None if points.get(1).is_some_and(|n| !n.blank) => continue, // a line starts here
-            None => [p.x, p.y],
-        };
-        out.push(Segment {
-            p0: from,
-            p1: [p.x, p.y],
-            rgb: [p.r, p.g, p.b],
-            width: 1.0,
-            layer: 0,
-        });
+    out.extend((0..points.len()).filter_map(|i| segment(points, i)));
+}
+
+/// The segment point `i` draws, if any.
+fn segment(points: &[Point], i: usize) -> Option<Segment> {
+    let p = points[i];
+    if p.blank {
+        return None;
     }
+    let from = match i.checked_sub(1) {
+        Some(j) => [points[j].x, points[j].y],
+        None if points.get(1).is_some_and(|n| !n.blank) => return None, // a line starts here
+        None => [p.x, p.y],
+    };
+    Some(Segment {
+        p0: from,
+        p1: [p.x, p.y],
+        rgb: [p.r, p.g, p.b],
+        width: 1.0,
+        layer: 0,
+    })
+}
+
+/// A scanner tracing the figure as a loop, `n` points per call: the segments of
+/// the points it passes, from `pos` on, and never more than one whole pass. `pos`
+/// carries the position, fractions included, to the next call.
+pub fn scan(points: &[Point], n: f64, pos: &mut f64, out: &mut Vec<Segment>) {
+    out.clear();
+    let len = points.len();
+    if len == 0 {
+        return;
+    }
+    let start = *pos % len as f64; // the figure may have shrunk since the last call
+    let end = start + n;
+    let first = start as usize;
+    let count = (end as usize - first).min(len);
+    *pos = end % len as f64;
+    out.extend((first..first + count).filter_map(|i| segment(points, i % len)));
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn scan_passes_part_of_the_loop_per_call() {
+        // A lit square, 4 points; segment() of point 0 is the line start, so 3 segments.
+        let sq: Vec<Point> = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+            .iter()
+            .map(|&[x, y]| Point::lit(x, y, [1.0; 3]))
+            .collect();
+        let (mut all, mut out) = (Vec::new(), Vec::new());
+        segments(&sq, &mut all);
+        let mut pos = 0.0;
+        // Fast enough for a whole pass: the same segments, once.
+        scan(&sq, 10.0, &mut pos, &mut out);
+        assert_eq!(out, all);
+        // 1.5 points per call: points 2, then 3 and 0 (the line start, no segment).
+        pos = 2.0;
+        scan(&sq, 1.5, &mut pos, &mut out);
+        assert_eq!(out, [all[1]]);
+        assert_eq!(pos, 3.5);
+        scan(&sq, 1.5, &mut pos, &mut out);
+        assert_eq!(out, [all[2]]);
+        assert_eq!(pos, 1.0);
+        // Too slow to reach the next point: nothing this call.
+        scan(&sq, 0.5, &mut pos, &mut out);
+        assert!(out.is_empty());
+        scan(&[], 5.0, &mut pos, &mut out);
+        assert!(out.is_empty());
+    }
+
     use super::*;
 
     #[test]

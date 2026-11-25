@@ -39,6 +39,9 @@ pub struct Fixture {
     pub personality: Personality,
     /// x, y, width, height as fractions of the output, origin top-left.
     pub zone: [f32; 4],
+    /// Points per second of a simulated scanner; each display frame draws only the
+    /// part of the figure the beam passes. 0 draws the whole figure every frame.
+    pub scan_rate: f32,
 }
 
 impl Default for Fixture {
@@ -47,6 +50,7 @@ impl Default for Fixture {
             start_address: 1,
             personality: Personality::default(),
             zone: [0.0, 0.0, 1.0, 1.0],
+            scan_rate: 0.0,
         }
     }
 }
@@ -234,6 +238,12 @@ impl Config {
                     f.zone
                 ));
             }
+            if !(0.0..=1_000_000.0).contains(&f.scan_rate) {
+                return Err(format!(
+                    "fixture {n}: scan_rate {} must be 0..1000000 points per second",
+                    f.scan_rate
+                ));
+            }
         }
         let zones = std::iter::once(("etherdream.zone", self.etherdream.zone))
             .chain(self.idn.zones().map(|z| ("idn zone", z)));
@@ -354,6 +364,10 @@ mod tests {
         assert!(bad_zone.validate().is_err());
         let bad_addr: Config = toml::from_str("[[fixture]]\nstart_address = 501").unwrap();
         assert!(bad_addr.validate().is_err());
+        let scan: Config = toml::from_str("[[fixture]]\nscan_rate = 30000.0").unwrap();
+        assert!(scan.validate().is_ok());
+        let bad_scan: Config = toml::from_str("[[fixture]]\nscan_rate = -1.0").unwrap();
+        assert!(bad_scan.validate().is_err());
     }
 
     #[test]

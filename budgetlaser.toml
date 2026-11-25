@@ -52,6 +52,7 @@ zone = [0.0, 0.0, 1.0, 1.0]
 start_address = 1
 personality = "13ch"       # 13ch | 17ch (fine channels 14-17) | 14ch, 18ch (13ch, 17ch + beam width)
 zone = [0.0, 0.0, 1.0, 1.0]
+scan_rate = 0.0            # points/s of a simulated scanner (e.g. 30000); 0 = no scan flicker
 
 # Two fixtures side by side:
 # [[fixture]]

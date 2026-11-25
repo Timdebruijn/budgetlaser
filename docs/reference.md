@@ -156,6 +156,23 @@ Vsync (Fifo), additive HDR line rendering with optional glow (`glow_decay` per f
 `internal_scale = 0.5` renders at half resolution on weak GPUs. `mapping = "fit"` keeps the
 square scan field centred; `"stretch"` fills the width.
 
+### Scan flicker
+
+A real laser traces its figure with a scanner at a fixed number of points per second; a
+figure with many points takes longer than a display frame, so it flickers, and a long path
+is redrawn less often, so it looks dimmer. `scan_rate = 30000` in a `[[fixture]]` simulates
+that: each display frame draws only the segments of the points a beam at that rate passes,
+carrying on where the previous frame stopped, never more than one whole pass. Blanked moves
+take time too, as on a laser. With `glow = true` the afterglow stands in for the persistence
+of the eye; without it each frame shows only its own slice. Default 0: the whole figure every
+frame.
+
+ILDA files carry real point counts, so they behave as on a laser at that rate. The built-in
+patterns use only the points they need to draw (a 64-beam fan is 128 points, where a
+real laser adds dwell points per beam), so they flicker later than on a laser. The Ether Dream
+and IDN streams already arrive at the software's own point rate; leave `scan_rate` at 0 on
+fixtures that show them.
+
 ### Masks
 
 Each `[[mask]]` block is a polygon, as corners in fractions of the output (origin top-left),
