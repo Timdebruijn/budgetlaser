@@ -6,7 +6,9 @@ playback, output options and the code layout.
 ## Build and run
 
 Release archives contain the binary next to `budgetlaser.toml`, `ilda/`, `fixtures/` and
-`tools/`; run `./budgetlaser budgetlaser.toml` in that folder. From source:
+`tools/`; run `./budgetlaser budgetlaser.toml` in that folder. A `v*` tag builds them unsigned;
+`scripts/sign_macos.sh <tag>` then signs and notarizes the macOS archive with a Developer ID and
+replaces it in the release. From source:
 
 ```bash
 cargo build --release
