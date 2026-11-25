@@ -105,8 +105,9 @@ speed. QLC+ users [asked for this](https://forum.qlcplus.org/viewtopic.php?p=585
 and BudgetLaser shows up on the network as an Ether Dream DAC or an IDN projector. A stream
 fills its own zone without any DMX, or you cue it from the desk on channel 2 with dimmer, size,
 pan and tilt. Programs that list Ether Dream or IDN output include MadLaser, Modulaser,
-Liberation and CloudLase. **We have tested it against the specs with the included test clients,
-not yet with any of these programs.**
+Liberation and CloudLase. **Tested with Modulaser 2.7.0 (free trial) on macOS: it finds
+BudgetLaser as an Ether Dream DAC and as an IDN unit, and its test pattern draws over both. The
+other programs are not tested yet.**
 
 **One projector, several "lasers".** Each `[[fixture]]` block in the config gets its own DMX
 address, mode and zone of the output. Desk-driven fixtures and a laser-software stream can share

@@ -131,6 +131,11 @@ or sends nothing for 1 s, which also blanks its frames. `[idn] direct` and `zone
 the Ether Dream, and a fixture with channel 2 at 220-239 shows the IDN stream.
 `tools/idn_test.py` streams a test circle in either mode and `--scan` lists IDN units.
 
+**Tested software.** Modulaser 2.7.0 (free trial, macOS, 2026-11-25) lists BudgetLaser under
+Output Settings > DAC as `etherdream:02:42:4c:41:53:52` and as an `idn:` unit, and its ILDA test
+pattern draws over both. Modulaser sends blanked points until the laser is armed, so a
+connected stream that draws nothing usually means the output is not armed yet.
+
 Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
 
 ## Output
