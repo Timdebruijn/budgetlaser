@@ -109,8 +109,8 @@ BudgetLaser as an Ether Dream DAC and as an IDN unit, and its test pattern draws
 other programs are not tested yet.**
 
 **One projector, several "lasers".** Each `[[fixture]]` block in the config gets its own DMX
-address, mode and zone of the output. Desk-driven fixtures and a laser-software stream can share
-one projector.
+address, mode and zone of the output. Desk-driven fixtures and laser-software streams can share
+one projector, and over IDN each extra service is one more laser for your show software.
 
 <p align="center">
   <img src="docs/media/stream.png" alt="One output in four zones: a laser-software stream top left, a tunnel top right, a fan bottom left and an ILDA file bottom right" width="720">
