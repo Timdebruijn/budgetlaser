@@ -37,11 +37,13 @@ zone = [0.0, 0.0, 1.0, 1.0]
 
 # IDN receiver (ILDA Digital Network): laser show software finds BudgetLaser with an
 # IDN scan and streams to UDP 7255. direct and zone as above; fixtures show it on
-# channel 2 = 220-239.
+# channel 2 = 220-239, channel 12 picks the service (0 = service 1). extra_services adds
+# a laser service per zone, so several programs each drive their own laser.
 [idn]
 enabled = false
 direct = true
 zone = [0.0, 0.0, 1.0, 1.0]
+# extra_services = [[0.5, 0.0, 0.5, 1.0]]   # service 2 in the right half
 
 # One block per virtual fixture (13, 14, 17 or 18 channels, see personality). Without
 # any [[fixture]] block there is one fixture at address 1 filling the output. zone = [x, y, width, height] as fractions of
