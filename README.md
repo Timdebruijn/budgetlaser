@@ -44,9 +44,8 @@ that folder:
 ./budgetlaser budgetlaser.toml     # fullscreen; Esc quits. Windows: budgetlaser.exe
 ```
 
-The builds are not signed yet. macOS blocks a downloaded binary until you run
-`xattr -dr com.apple.quarantine .` in the folder; Windows SmartScreen asks you to confirm with
-More info, Run anyway.
+The macOS build is signed and notarized. The Windows build is not signed yet: SmartScreen asks
+you to confirm with More info, Run anyway.
 
 In a second terminal, drive it over Art-Net with plain Python (nothing to install; on Windows,
 start each line with `python`):
@@ -164,7 +163,7 @@ useful contributions:
 2. **Try your laser show software** over Ether Dream or IDN, and tell us what worked and what did not.
 3. **Measure the Pi 5.** The target is 1080p60 with glow; [docs/raspberry-pi.md](docs/raspberry-pi.md)
    shows how to measure it.
-4. **Code signing** for the macOS and Windows builds.
+4. **Code signing** for the Windows build.
 
 Open an issue or a pull request, one topic per pull request; `cargo test` runs the tests. If
 BudgetLaser is what you wanted from a projector and a hazer, a star helps others find it.
