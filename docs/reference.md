@@ -6,7 +6,9 @@ playback, output options and the code layout.
 ## Build and run
 
 Release archives contain the binary next to `budgetlaser.toml`, `ilda/`, `fixtures/` and
-`tools/`; run `./budgetlaser budgetlaser.toml` in that folder. From source:
+`tools/`; run `./budgetlaser budgetlaser.toml` in that folder. A `v*` tag builds them unsigned;
+`scripts/sign_macos.sh <tag>` then signs and notarizes the macOS archive with a Developer ID and
+replaces it in the release. From source:
 
 ```bash
 cargo build --release
@@ -168,6 +170,19 @@ Masks are cut out of the finished frame at output resolution, after glow, so the
 every fixture, ILDA file and Ether Dream or IDN stream, whatever the mapping, zones or
 pan/tilt. They are set in the config only; no DMX channel can switch them off. To line them
 up, set `[output] show_masks = true`: masked areas turn dim red. Turn it off for the show.
+
+`dim = 0.3` lets 30% of the light through instead of none; where masks overlap their dims
+multiply. `fixtures = [1, 3]` limits a mask to those fixtures (1 = the first `[[fixture]]`
+block): their light is cut where it is drawn, so other fixtures and the streams still show
+there. Such a mask follows the internal render resolution, so with `internal_scale` below 1
+its edge is as soft as the beams.
+
+```toml
+[[mask]]                   # fixture 2 stays off the stage back wall, at 20%
+points = [[0.0, 0.0], [1.0, 0.0], [1.0, 0.3], [0.0, 0.3]]
+dim = 0.2
+fixtures = [2]
+```
 
 A masked area gets the projector's black level, not darkness, and a mask is no certified
 safety system: the projector manual and the venue's rules still apply.

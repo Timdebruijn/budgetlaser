@@ -1,6 +1,7 @@
 //! wgpu pipeline: capsules (segments/dots) additively into an HDR target,
-//! optional glow by decaying the previous target, then tonemap to the surface,
-//! where `[[mask]]` areas are cut out of the finished frame.
+//! optional glow by decaying the previous target, then tonemap to the surface.
+//! `[[mask]]` areas for every source are cut out of the finished frame in the
+//! tonemap pass; masks for some fixtures only are applied as those draw.
 
 use crate::config::{Mapping, Mask, Output as Cfg};
 use crate::point::Segment;
@@ -28,6 +29,8 @@ pub struct Batch {
     pub range: Range<usize>,
     /// x, y, width, height as fractions of the output, origin top-left.
     pub zone: [f32; 4],
+    /// Index into `[[fixture]]`; None for a stream drawn into its own zone.
+    pub fixture: Option<usize>,
 }
 
 /// Scan-field rectangle in target pixels (x, y from the top-left, width, height).
@@ -58,38 +61,57 @@ fn scissor(r: [f32; 4], w: u32, h: u32) -> (u32, u32, u32, u32) {
     (x0, y0, x1 - x0, y1 - y0)
 }
 
-/// One byte per output pixel, top row first: 0 where the pixel centre lies inside any
-/// mask polygon, 255 elsewhere. Nonzero winding: a self-crossing outline leaves no
-/// unmasked hole where it overlaps itself.
-fn mask_pixels(masks: &[Mask], w: u32, h: u32) -> Vec<u8> {
-    let mut px = vec![255u8; (w * h) as usize];
+/// Calls `hit` once with the index (top row first) of every pixel of a w x h grid
+/// whose centre lies inside the mask polygon. Nonzero winding: a self-crossing
+/// outline leaves no unmasked hole where it overlaps itself.
+fn cover(m: &Mask, w: u32, h: u32, mut hit: impl FnMut(usize)) {
     let col = |v: f32| ((v * w as f32 - 0.5).ceil().max(0.0) as u32).min(w) as usize;
+    let p = &m.points;
     let mut xs = Vec::new();
-    for m in masks {
-        let p = &m.points;
-        for row in 0..h {
-            let y = (row as f32 + 0.5) / h as f32;
-            xs.clear();
-            for (i, a) in p.iter().enumerate() {
-                let b = p[(i + 1) % p.len()];
-                if (a[1] <= y) != (b[1] <= y) {
-                    let x = a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
-                    xs.push((x, if a[1] < b[1] { 1 } else { -1 }));
-                }
+    for row in 0..h {
+        let y = (row as f32 + 0.5) / h as f32;
+        xs.clear();
+        for (i, a) in p.iter().enumerate() {
+            let b = p[(i + 1) % p.len()];
+            if (a[1] <= y) != (b[1] <= y) {
+                let x = a[0] + (y - a[1]) / (b[1] - a[1]) * (b[0] - a[0]);
+                xs.push((x, if a[1] < b[1] { 1 } else { -1 }));
             }
-            xs.sort_by(|a, b| a.0.total_cmp(&b.0));
-            let line = (row * w) as usize;
-            let mut winding = 0;
-            for pair in xs.windows(2) {
-                winding += pair[0].1;
-                if winding != 0 {
-                    // Pixels whose centre (x + 0.5) / w lies between the two crossings.
-                    px[line + col(pair[0].0)..line + col(pair[1].0)].fill(0);
-                }
+        }
+        xs.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let line = (row * w) as usize;
+        let mut winding = 0;
+        for pair in xs.windows(2) {
+            winding += pair[0].1;
+            if winding != 0 {
+                // Pixels whose centre (x + 0.5) / w lies between the two crossings.
+                (line + col(pair[0].0)..line + col(pair[1].0)).for_each(&mut hit);
             }
         }
     }
+}
+
+/// Light let through per pixel, 255 = all, with every mask in `masks` applied:
+/// overlapping masks multiply their `dim`.
+fn mask_pixels<'a>(masks: impl IntoIterator<Item = &'a Mask>, w: u32, h: u32) -> Vec<u8> {
+    let mut px = vec![255u8; (w * h) as usize];
+    for m in masks {
+        cover(m, w, h, |i| px[i] = (px[i] as f32 * m.dim).round() as u8);
+    }
     px
+}
+
+/// Layer of the per-fixture mask texture for each fixture index; 0 is the layer
+/// without masks, for fixtures that no mask names.
+fn fixture_layers(masks: &[Mask]) -> Vec<u32> {
+    let mut named: Vec<usize> = masks.iter().flat_map(|m| m.fixtures.clone()).collect();
+    named.sort_unstable();
+    named.dedup();
+    let mut layers = vec![0; named.last().copied().unwrap_or(0)];
+    for (layer, f) in named.into_iter().enumerate() {
+        layers[f - 1] = layer as u32 + 1;
+    }
+    layers
 }
 
 pub struct Renderer {
@@ -109,6 +131,9 @@ pub struct Renderer {
     tonemap_pipeline: wgpu::RenderPipeline,
     masks: Vec<Mask>,
     mask_bg: wgpu::BindGroup,
+    fixture_layout: wgpu::BindGroupLayout,
+    fixture_layers: Vec<u32>,
+    fixture_mask_bg: wgpu::BindGroup,
     segments: wgpu::Buffer,
     staging: Vec<Segment>,
     hdr: [(wgpu::TextureView, wgpu::BindGroup); 2],
@@ -273,9 +298,22 @@ impl Renderer {
             ..Default::default()
         });
 
+        let fixture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 2,
+                visibility: wgpu::ShaderStages::FRAGMENT,
+                ty: wgpu::BindingType::Texture {
+                    sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                    view_dimension: wgpu::TextureViewDimension::D2Array,
+                    multisampled: false,
+                },
+                count: None,
+            }],
+        });
         let line_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[Some(&uniform_layout)],
+            bind_group_layouts: &[Some(&uniform_layout), Some(&fixture_layout)],
             immediate_size: 0,
         });
         let fs_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -292,7 +330,7 @@ impl Renderer {
         let seg_layout = wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<Segment>() as u64,
             step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x3, 3 => Float32],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x3, 3 => Float32, 4 => Uint32],
         };
         let pipeline =
             |label, vs, fs, buffers: &[Option<wgpu::VertexBufferLayout>], layout, format, blend| {
@@ -363,6 +401,8 @@ impl Renderer {
             log::warn!("show_masks is on: masked areas are lit red, turn it off for the show");
         }
         let mask_bg = make_mask(&device, &queue, &tex_layout, &sampler, &masks, &config);
+        let fixture_layers = fixture_layers(&masks);
+        let fixture_mask_bg = make_fixture_mask(&device, &queue, &fixture_layout, &masks, hdr_size);
         Self {
             surface,
             offscreen,
@@ -379,6 +419,9 @@ impl Renderer {
             tonemap_pipeline,
             masks,
             mask_bg,
+            fixture_layout,
+            fixture_layers,
+            fixture_mask_bg,
             segments,
             staging: Vec::new(),
             hdr,
@@ -417,6 +460,13 @@ impl Renderer {
             &self.sampler,
             &self.masks,
             &self.config,
+        );
+        self.fixture_mask_bg = make_fixture_mask(
+            &self.device,
+            &self.queue,
+            &self.fixture_layout,
+            &self.masks,
+            self.hdr_size,
         );
         self.first = true;
     }
@@ -469,10 +519,15 @@ impl Renderer {
             let r = scan_rect(b.zone, self.cfg.mapping, w, h);
             let start = self.staging.len();
             let room = MAX_SEGMENTS - start;
+            let layer = b
+                .fixture
+                .and_then(|f| self.fixture_layers.get(f).copied())
+                .unwrap_or(0);
             for seg in segs[b.range.clone()].iter().take(room) {
                 self.staging.push(Segment {
                     p0: to_ndc(seg.p0, r, w, h),
                     p1: to_ndc(seg.p1, r, w, h),
+                    layer,
                     ..*seg
                 });
             }
@@ -515,6 +570,7 @@ impl Renderer {
             if !draws.is_empty() {
                 // Clip each fixture to its scan field: points outside it are not drawn.
                 pass.set_pipeline(&self.line_pipeline);
+                pass.set_bind_group(1, &self.fixture_mask_bg, &[]);
                 pass.set_vertex_buffer(0, self.segments.slice(..));
                 for (instances, (x, y, sw, sh)) in draws {
                     pass.set_scissor_rect(x, y, sw, sh);
@@ -609,7 +665,9 @@ fn target_size(config: &wgpu::SurfaceConfiguration, scale: f32) -> (u32, u32) {
     (f(config.width), f(config.height))
 }
 
-/// The mask as a texture at output resolution, so `internal_scale` does not blur it.
+/// The masks for every source as a texture at output resolution, so `internal_scale`
+/// does not blur them: red is the light let through, green 0 inside any mask (for
+/// `show_masks`, which shows the per-fixture masks too).
 fn make_mask(
     device: &wgpu::Device,
     queue: &wgpu::Queue,
@@ -630,16 +688,26 @@ fn make_mask(
         mip_level_count: 1,
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::R8Unorm,
+        format: wgpu::TextureFormat::Rg8Unorm,
         usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
+    let keep = mask_pixels(masks.iter().filter(|m| m.fixtures.is_empty()), w, h);
+    let mut any = vec![255u8; keep.len()];
+    for m in masks {
+        cover(m, w, h, |i| any[i] = 0);
+    }
+    let rg: Vec<u8> = keep
+        .into_iter()
+        .zip(any)
+        .flat_map(|(k, a)| [k, a])
+        .collect();
     queue.write_texture(
         tex.as_image_copy(),
-        &mask_pixels(masks, w, h),
+        &rg,
         wgpu::TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(w),
+            bytes_per_row: Some(w * 2),
             rows_per_image: None,
         },
         size,
@@ -658,6 +726,62 @@ fn make_mask(
                 resource: wgpu::BindingResource::Sampler(sampler),
             },
         ],
+    })
+}
+
+/// The masks that name fixtures, one layer per named fixture (see `fixture_layers`)
+/// at the internal render size, where the line pass draws.
+fn make_fixture_mask(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::BindGroupLayout,
+    masks: &[Mask],
+    (w, h): (u32, u32),
+) -> wgpu::BindGroup {
+    let layers = fixture_layers(masks);
+    let mut px = vec![255u8; (w * h) as usize]; // layer 0: no mask
+    for (f, &layer) in layers.iter().enumerate() {
+        if layer > 0 {
+            let named = masks.iter().filter(|m| m.fixtures.contains(&(f + 1)));
+            px.extend(mask_pixels(named, w, h));
+        }
+    }
+    let size = wgpu::Extent3d {
+        width: w,
+        height: h,
+        depth_or_array_layers: (px.len() / (w * h) as usize) as u32,
+    };
+    let tex = device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("fixture masks"),
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::R8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        tex.as_image_copy(),
+        &px,
+        wgpu::TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(w),
+            rows_per_image: Some(h),
+        },
+        size,
+    );
+    let view = tex.create_view(&wgpu::TextureViewDescriptor {
+        dimension: Some(wgpu::TextureViewDimension::D2Array),
+        ..Default::default()
+    });
+    device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout,
+        entries: &[wgpu::BindGroupEntry {
+            binding: 2,
+            resource: wgpu::BindingResource::TextureView(&view),
+        }],
     })
 }
 
@@ -728,6 +852,8 @@ mod tests {
     fn masks_cover_pixel_centres() {
         let m = |points: &[[f32; 2]]| Mask {
             points: points.to_vec(),
+            dim: 0.0,
+            fixtures: Vec::new(),
         };
         // Bottom 30% of a 10x10 output: rows 7-9, every column.
         let band = m(&[[0.0, 0.7], [1.0, 0.7], [1.0, 1.0], [0.0, 1.0]]);
@@ -749,5 +875,21 @@ mod tests {
             })
             .collect();
         assert_eq!(mask_pixels(&[m(&star)], 10, 10)[55], 0);
+    }
+
+    #[test]
+    fn mask_dim_multiplies_and_fixtures_get_layers() {
+        let m = |x0: f32, dim: f32, fixtures: Vec<usize>| Mask {
+            points: vec![[x0, 0.0], [1.0, 0.0], [1.0, 1.0], [x0, 1.0]],
+            dim,
+            fixtures,
+        };
+        // Right half at 50%, right quarter at 50% again: 25% there.
+        let px = mask_pixels(&[m(0.5, 0.5, vec![]), m(0.75, 0.5, vec![])], 4, 1);
+        assert_eq!(px, [255, 255, 128, 64]);
+        // Fixtures 3 and 1 are named: layers 1 and 2 in fixture order, 2 has none.
+        let masks = [m(0.5, 0.0, vec![3]), m(0.5, 0.0, vec![1, 3])];
+        assert_eq!(fixture_layers(&masks), [1, 0, 2]);
+        assert!(fixture_layers(&[m(0.5, 0.0, vec![])]).is_empty());
     }
 }

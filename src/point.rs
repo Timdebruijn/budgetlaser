@@ -51,6 +51,8 @@ pub struct Segment {
     pub rgb: [f32; 3],
     /// Multiplier on the configured line width.
     pub width: f32,
+    /// Layer of the per-fixture mask texture; set by the renderer.
+    pub layer: u32,
 }
 
 /// ILDA semantics: the laser state of a point applies to the move into it, so a lit
@@ -72,6 +74,7 @@ pub fn segments(points: &[Point], out: &mut Vec<Segment>) {
             p1: [p.x, p.y],
             rgb: [p.r, p.g, p.b],
             width: 1.0,
+            layer: 0,
         });
     }
 }

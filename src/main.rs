@@ -149,7 +149,7 @@ impl App {
 
         self.segments.clear();
         self.batches.clear();
-        for f in &mut self.fixtures {
+        for (i, f) in self.fixtures.iter_mut().enumerate() {
             let mut params = f.smoother.sample(now);
             params.on &= !blackout;
             f.phases.tick(&params, dt);
@@ -186,6 +186,7 @@ impl App {
             self.batches.push(render::Batch {
                 range: start..self.segments.len(),
                 zone: f.cfg.zone,
+                fixture: Some(i),
             });
         }
         let dac =
@@ -206,6 +207,7 @@ impl App {
             self.batches.push(render::Batch {
                 range: start..self.segments.len(),
                 zone,
+                fixture: None,
             });
         }
         let presented = self
