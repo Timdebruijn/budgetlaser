@@ -103,7 +103,7 @@ fn fs_tonemap(i: FsOut) -> @location(0) vec4<f32> {
     let hdr = max(textureSample(src, samp, i.uv).rgb * u.exposure, vec3<f32>(0.0));
     var c = 1.0 - exp(-hdr);               // soft shoulder, black stays exactly black
     if (u.gamma_out > 0.5) { c = pow(c, vec3<f32>(1.0 / 2.2)); }
-    // Last step, so no source and no glow reaches a masked pixel.
+    // Last step, so every source and the glow go through the masks for every source.
     let m = textureLoad(mask, vec2<i32>(i.pos.xy), 0).rg;
     c = c * m.r + vec3<f32>(0.25, 0.0, 0.0) * u.show_masks * (1.0 - m.g);
     return vec4<f32>(c, 1.0);
