@@ -142,7 +142,9 @@ found no free tool that does all three (checked 2026-11-01). Products, prices an
 - **A projector is not a laser.** It is dimmer and softer and needs haze and a dark room. Beams
   start at the lens and stay inside the projection cone, so small and medium rooms suit it best.
   Its black level shows as a faint glow cone.
-- **No scan flicker.** Output runs at the display's 60 Hz; ILDA files play at a fixed 30 fps.
+- **Scan flicker is simulated, not inherent.** The projector draws the whole figure every frame
+  at the display's 60 Hz; set a fixture's `scan_rate` to make large figures flicker as on a
+  real scanner ([reference](docs/reference.md#scan-flicker)). ILDA files play at a fixed 30 fps.
 - **Not a replacement for a certified show laser.**
 - **Laser-phosphor projectors are laser products.** The FDA classifies them under
   [Laser Notice 57](https://www.fda.gov/regulatory-information/search-fda-guidance-documents/classification-and-requirements-laser-illuminated-projectors-lips-laser-notice-no-57),

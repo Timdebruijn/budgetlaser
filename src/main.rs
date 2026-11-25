@@ -24,6 +24,8 @@ struct Fixture {
     cfg: config::Fixture,
     smoother: fixture::Smoother,
     phases: pattern::Phases,
+    /// Where the simulated scanner is along the figure, in points.
+    scan_pos: f64,
 }
 
 struct App {
@@ -174,7 +176,15 @@ impl App {
                 self.cfg.output.dimmer_gamma,
                 &mut self.frame,
             );
-            point::segments(&self.frame.points, &mut self.scratch);
+            match f.cfg.scan_rate {
+                0.0 => point::segments(&self.frame.points, &mut self.scratch),
+                rate => point::scan(
+                    &self.frame.points,
+                    rate as f64 * dt as f64,
+                    &mut f.scan_pos,
+                    &mut self.scratch,
+                ),
+            }
             let start = self.segments.len();
             let width = params.width;
             self.segments
@@ -467,6 +477,7 @@ fn main() {
                 cfg: f.clone(),
                 smoother: fixture::Smoother::new(),
                 phases: pattern::Phases::default(),
+                scan_pos: 0.0,
             })
             .collect(),
         clips,
