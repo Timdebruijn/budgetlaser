@@ -44,9 +44,8 @@ that folder:
 ./budgetlaser budgetlaser.toml     # fullscreen; Esc quits. Windows: budgetlaser.exe
 ```
 
-The builds are not signed yet. macOS blocks a downloaded binary until you run
-`xattr -dr com.apple.quarantine .` in the folder; Windows SmartScreen asks you to confirm with
-More info, Run anyway.
+The macOS build is signed and notarized. The Windows build is not signed yet: SmartScreen asks
+you to confirm with More info, Run anyway.
 
 In a second terminal, drive it over Art-Net with plain Python (nothing to install; on Windows,
 start each line with `python`):
@@ -110,8 +109,8 @@ BudgetLaser as an Ether Dream DAC and as an IDN unit, and its test pattern draws
 other programs are not tested yet.**
 
 **One projector, several "lasers".** Each `[[fixture]]` block in the config gets its own DMX
-address, mode and zone of the output. Desk-driven fixtures and a laser-software stream can share
-one projector.
+address, mode and zone of the output. Desk-driven fixtures and laser-software streams can share
+one projector, and over IDN each extra service is one more laser for your show software.
 
 <p align="center">
   <img src="docs/media/stream.png" alt="One output in four zones: a laser-software stream top left, a tunnel top right, a fan bottom left and an ILDA file bottom right" width="720">
@@ -151,10 +150,10 @@ found no free tool that does all three (checked 2026-11-01). Products, prices an
   and Risk Group 3 projectors have a hazard distance. Follow the projector manual, don't aim it
   into the audience unless the manual allows it, check venue rules and permits, and tell the
   venue about the haze: it can set off smoke detectors.
-- **Masks keep beams out of areas you choose.** A `[[mask]]` polygon in the config blanks that
-  part of the image for every source, and no desk can switch it off
-  ([reference](docs/reference.md#masks)). It is an aid, not a certified safety system, and the
-  projector's black level still reaches the masked area.
+- **Masks keep beams out of areas you choose.** A `[[mask]]` polygon in the config blanks or
+  dims that part of the image, for every source or for chosen fixtures, and no desk can switch
+  it off ([reference](docs/reference.md#masks)). It is an aid, not a certified safety system,
+  and the projector's black level still reaches the masked area.
 
 ## Status and help wanted
 
@@ -166,7 +165,7 @@ useful contributions:
 2. **Try your laser show software** over Ether Dream or IDN, and tell us what worked and what did not.
 3. **Measure the Pi 5.** The target is 1080p60 with glow; [docs/raspberry-pi.md](docs/raspberry-pi.md)
    shows how to measure it.
-4. **Code signing** for the macOS and Windows builds.
+4. **Code signing** for the Windows build.
 
 Open an issue or a pull request, one topic per pull request; `cargo test` runs the tests. If
 BudgetLaser is what you wanted from a projector and a hazer, a star helps others find it.

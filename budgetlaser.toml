@@ -37,11 +37,13 @@ zone = [0.0, 0.0, 1.0, 1.0]
 
 # IDN receiver (ILDA Digital Network): laser show software finds BudgetLaser with an
 # IDN scan and streams to UDP 7255. direct and zone as above; fixtures show it on
-# channel 2 = 220-239.
+# channel 2 = 220-239, channel 12 picks the service (0 = service 1). extra_services adds
+# a laser service per zone, so several programs each drive their own laser.
 [idn]
 enabled = false
 direct = true
 zone = [0.0, 0.0, 1.0, 1.0]
+# extra_services = [[0.5, 0.0, 0.5, 1.0]]   # service 2 in the right half
 
 # One block per virtual fixture (13, 14, 17 or 18 channels, see personality). Without
 # any [[fixture]] block there is one fixture at address 1 filling the output. zone = [x, y, width, height] as fractions of
@@ -60,7 +62,9 @@ scan_rate = 0.0            # points/s of a simulated scanner (e.g. 30000); 0 = n
 # start_address = 14
 # zone = [0.5, 0.0, 0.5, 1.0]
 
-# Masks: nothing is drawn inside these polygons, from any source; corners as fractions of
-# the output, origin top-left. Not switchable from DMX. Keep beams out of the audience:
+# Masks: nothing is drawn inside these polygons; corners as fractions of the output, origin
+# top-left. dim = 0.3 lets 30% of the light through instead (default 0). fixtures = [1, 3]
+# limits a mask to those [[fixture]] blocks (1 = the first); without it the mask holds for
+# every source. Not switchable from DMX. Keep beams out of the audience:
 # [[mask]]
 # points = [[0.0, 0.7], [1.0, 0.7], [1.0, 1.0], [0.0, 1.0]]

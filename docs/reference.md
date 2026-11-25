@@ -6,7 +6,9 @@ playback, output options and the code layout.
 ## Build and run
 
 Release archives contain the binary next to `budgetlaser.toml`, `ilda/`, `fixtures/` and
-`tools/`; run `./budgetlaser budgetlaser.toml` in that folder. From source:
+`tools/`; run `./budgetlaser budgetlaser.toml` in that folder. A `v*` tag builds them unsigned;
+`scripts/sign_macos.sh <tag>` then signs and notarizes the macOS archive with a Developer ID and
+replaces it in the release. From source:
 
 ```bash
 cargo build --release
@@ -85,7 +87,7 @@ something per pattern:
 | 160-179 | Polygon | 3-12 sides | outline breathes |
 | 180-199 | ILDA file | file number 0-255 | playback speed; 0 holds frame 0 |
 | 200-219 | Ether Dream stream | - | - |
-| 220-239 | IDN stream | - | - |
+| 220-239 | IDN stream | service 0-254 (0 = service 1) | - |
 | 240-255 | reserved | | |
 
 **ILDA files.** Put `.ild` files in the `[ilda] dir` (default `ilda/` next to the config
@@ -119,21 +121,30 @@ and `--discover` lists DACs that broadcast.
 
 **IDN.** With `[idn] enabled = true` BudgetLaser is an IDN projector (ILDA Digital Network,
 IDN-Stream revision 002 and the IDN-Hello draft of 2022): it answers scans, service map
-requests and pings on UDP 7255 and offers one laser projector service. Software streams
+requests and pings on UDP 7255 and offers one laser projector service, or more (see below).
+Software streams
 IDN-RT channel messages to it in continuous graphic mode (wave samples, drawn as they arrive)
 or discrete graphic mode (frames, repeated until the next one, or drawn once with the once
 flag). The sample layout comes from the channel's tag dictionary: X and Y at any precision
 and colour lines by wavelength, each mapped to the nearest of red (600 nm and up), yellow,
 green, cyan or blue (below 480 nm); intensity, Z and beam brush are ignored, as is a second
 scan head. Frames split into IDN fragments are dropped; software normally relies on IP
-fragmentation instead. One client at a time: a second gets "occupied" until the first closes
-or sends nothing for 1 s, which also blanks its frames. `[idn] direct` and `zone` work as for
-the Ether Dream, and a fixture with channel 2 at 220-239 shows the IDN stream.
+fragmentation instead. `[idn] direct` and `zone` work as for the Ether Dream, and a fixture
+with channel 2 at 220-239 shows the IDN stream.
+
+`extra_services = [[x, y, width, height], ...]` offers one more laser service per entry
+(service 2, 3, ...), each drawn into its own zone, so several programs, or one program with
+several laser outputs, each drive their own "laser". Software lists them as one unit with
+`:1`, `:2` and so on after its name. A fixture picks the service with channel 12 (0 =
+service 1). Each service takes one client at a time: another one that routes a channel to it
+gets "occupied" until the first closes or sends nothing for 1 s, which also blanks its frames;
+the unit reports itself occupied in scans when every service is held.
 `tools/idn_test.py` streams a test circle in either mode and `--scan` lists IDN units.
 
 **Tested software.** Modulaser 2.7.0 (free trial, macOS, 2026-11-25) lists BudgetLaser under
 Output Settings > DAC as `etherdream:02:42:4c:41:53:52` and as an `idn:` unit, and its ILDA test
-pattern draws over both. Modulaser sends blanked points until the laser is armed, so a
+pattern draws over both. With one extra IDN service its two laser outputs each drew into their
+own zone. Modulaser sends blanked points until the laser is armed, so a
 connected stream that draws nothing usually means the output is not armed yet.
 
 Signal loss: blackout after `signal_timeout_s` (default 3 s) or `signal_loss = "hold"`.
@@ -176,6 +187,19 @@ Masks are cut out of the finished frame at output resolution, after glow, so the
 every fixture, ILDA file and Ether Dream or IDN stream, whatever the mapping, zones or
 pan/tilt. They are set in the config only; no DMX channel can switch them off. To line them
 up, set `[output] show_masks = true`: masked areas turn dim red. Turn it off for the show.
+
+`dim = 0.3` lets 30% of the light through instead of none; where masks overlap their dims
+multiply. `fixtures = [1, 3]` limits a mask to those fixtures (1 = the first `[[fixture]]`
+block): their light is cut where it is drawn, so other fixtures and the streams still show
+there. Such a mask follows the internal render resolution, so with `internal_scale` below 1
+its edge is as soft as the beams.
+
+```toml
+[[mask]]                   # fixture 2 stays off the stage back wall, at 20%
+points = [[0.0, 0.0], [1.0, 0.0], [1.0, 0.3], [0.0, 0.3]]
+dim = 0.2
+fixtures = [2]
+```
 
 A masked area gets the projector's black level, not darkness, and a mask is no certified
 safety system: the projector manual and the venue's rules still apply.

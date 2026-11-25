@@ -42,7 +42,6 @@ const EVENT_NEW: u16 = 1 << 0;
 const EVENT_CHANNEL_CLOSED: u16 = 1 << 1;
 
 const SERVICE_LASER: u8 = 0x80;
-const SERVICE_ID: u8 = 1;
 const MODE_CONTINUOUS: u8 = 0x01;
 const MODE_DISCRETE: u8 = 0x02;
 
@@ -184,8 +183,10 @@ fn line(nm: f32) -> [f32; 3] {
     }
 }
 
-/// An open channel, routed to the laser service in one graphic mode.
+/// An open channel, routed to one laser service in one graphic mode.
 struct Channel {
+    /// Index of the service it draws on (service ID - 1).
+    service: usize,
     mode: u8,
     /// Service data match bits; data chunks must carry the same ones.
     sdm: u8,
@@ -195,72 +196,109 @@ struct Channel {
     once: bool,
 }
 
-/// Receiver state shared by the network thread and the render loop.
-pub struct Idn {
-    /// The one client allowed to stream, and when it last sent.
-    client: Option<(SocketAddr, Instant)>,
+/// A client link (one program) and its channels.
+struct Client {
+    addr: SocketAddr,
+    /// When it last sent.
+    last: Instant,
     new_link: bool,
     channels: Vec<Option<Channel>>,
-    /// Wave samples received since the renderer last took them.
+}
+
+/// Wave samples of one service.
+#[derive(Default)]
+struct Output {
+    /// Received since the renderer last took them.
     pending: Vec<Point>,
     last: Option<Point>,
 }
 
+/// Receiver state shared by the network thread and the render loop. Each laser
+/// service is drawn on its own; one client at a time may route channels to it.
+pub struct Idn {
+    clients: Vec<Client>,
+    outputs: Vec<Output>,
+}
+
 impl Default for Idn {
     fn default() -> Self {
-        Self {
-            client: None,
-            new_link: false,
-            channels: (0..64).map(|_| None).collect(),
-            pending: Vec::new(),
-            last: None,
-        }
+        Self::new(1)
     }
 }
 
 impl Idn {
-    fn timed_out(&self, now: Instant) -> bool {
-        self.client
-            .is_some_and(|(_, t)| now.saturating_duration_since(t) > LINK_TIMEOUT)
+    /// A unit with `services` laser services, IDs 1 to `services`.
+    pub fn new(services: usize) -> Self {
+        Self {
+            clients: Vec::new(),
+            outputs: (0..services).map(|_| Output::default()).collect(),
+        }
     }
 
-    /// Closes the link and its channels; wave samples already received still draw.
-    fn close(&mut self) {
-        if let Some((addr, _)) = self.client.take() {
-            log::info!("IDN client {addr} disconnected");
-        }
-        self.channels.iter_mut().for_each(|c| *c = None);
+    /// Drops clients that sent nothing for the link timeout, with their channels;
+    /// wave samples already received still draw.
+    fn expire(&mut self, now: Instant) {
+        self.clients.retain(|c| {
+            let live = now.saturating_duration_since(c.last) <= LINK_TIMEOUT;
+            if !live {
+                log::info!("IDN client {} disconnected", c.addr);
+            }
+            live
+        });
     }
 
-    /// The discrete frames of all open channels, then the wave samples received
-    /// since the previous call, led by the last of those as a blanked move.
-    pub fn take(&mut self, now: Instant, out: &mut Vec<Point>) {
-        if self.timed_out(now) {
-            self.close();
+    /// The client that routes a channel to `service`, if any.
+    fn owner(&self, service: usize) -> Option<SocketAddr> {
+        self.clients
+            .iter()
+            .find(|c| c.channels.iter().flatten().any(|ch| ch.service == service))
+            .map(|c| c.addr)
+    }
+
+    fn close(&mut self, from: SocketAddr) {
+        if let Some(i) = self.clients.iter().position(|c| c.addr == from) {
+            log::info!("IDN client {from} disconnected");
+            self.clients.remove(i);
         }
+    }
+
+    /// The discrete frames on `service`, then its wave samples received since the
+    /// previous call, led by the last of those as a blanked move.
+    pub fn take(&mut self, service: usize, now: Instant, out: &mut Vec<Point>) {
+        self.expire(now);
         out.clear();
-        for c in self.channels.iter_mut().flatten() {
-            out.extend_from_slice(&c.frame);
-            if c.once {
-                c.frame.clear();
+        for c in self
+            .clients
+            .iter_mut()
+            .flat_map(|c| c.channels.iter_mut().flatten())
+        {
+            if c.service == service {
+                out.extend_from_slice(&c.frame);
+                if c.once {
+                    c.frame.clear();
+                }
             }
         }
-        if self.pending.is_empty() {
+        let Some(o) = self.outputs.get_mut(service) else {
+            return;
+        };
+        if o.pending.is_empty() {
             return;
         }
-        if let Some(prev) = self.last {
+        if let Some(prev) = o.last {
             out.push(Point {
                 blank: true,
                 ..prev
             });
         }
-        out.append(&mut self.pending);
-        self.last = out.last().copied();
+        out.append(&mut o.pending);
+        o.last = out.last().copied();
     }
 
     /// Handles one datagram and returns the reply, if any.
     fn packet(&mut self, pkt: &[u8], from: SocketAddr, now: Instant) -> Option<Vec<u8>> {
         let (&[cmd, flags, s0, s1], payload) = pkt.split_first_chunk::<4>()?;
+        self.expire(now);
         // Replies copy the client group (flags) and the sequence number.
         let reply = |cmd: u8, body: &[u8]| [&[cmd, flags, s0, s1][..], body].concat();
         match cmd {
@@ -278,7 +316,9 @@ impl Idn {
                 let mut r = [0u8; 40];
                 r[0] = 40;
                 r[1] = 0x01; // IDN-Hello version 0.1, as the draft requires
-                let busy = self.client.is_some_and(|(a, _)| a != from) && !self.timed_out(now);
+                // Occupied when other clients hold every service.
+                let busy =
+                    (0..self.outputs.len()).all(|s| self.owner(s).is_some_and(|a| a != from));
                 r[2] = 0x01 | if busy { 0x10 } else { 0 }; // realtime, occupied
                 r[4] = 7; // unit ID: length, category EUI-48, MAC
                 r[5] = 0x01;
@@ -287,10 +327,16 @@ impl Idn {
                 Some(reply(SCAN_RESPONSE, &r))
             }
             SERVICEMAP_REQUEST => {
-                let mut r = [0u8; 28];
-                r[..4].copy_from_slice(&[4, 24, 0, 1]); // sizes, no relays, one service
-                r[4..8].copy_from_slice(&[SERVICE_ID, SERVICE_LASER, 0x01, 0]); // default
-                r[8..8 + NAME.len()].copy_from_slice(NAME);
+                let n = self.outputs.len();
+                let mut r = vec![0u8; 4 + 24 * n];
+                r[..4].copy_from_slice(&[4, 24, 0, n as u8]); // sizes, no relays
+                for (i, e) in r[4..].as_chunks_mut::<24>().0.iter_mut().enumerate() {
+                    // ID, type, flags (the first is the default), no relay.
+                    e[..4].copy_from_slice(&[i as u8 + 1, SERVICE_LASER, (i == 0) as u8, 0]);
+                    let name = format!("BudgetLaser {}", i + 1);
+                    let name = if n == 1 { "BudgetLaser" } else { &name };
+                    e[4..4 + name.len()].copy_from_slice(name.as_bytes());
+                }
                 Some(reply(SERVICEMAP_RESPONSE, &r))
             }
             RT_MESSAGE | RT_MESSAGE_ACK | RT_CLOSE | RT_CLOSE_ACK => {
@@ -301,7 +347,8 @@ impl Idn {
                 let mut r = [0u8; 12];
                 r[0] = 12;
                 r[1] = result;
-                if result == ACK_OK && std::mem::take(&mut self.new_link) {
+                let client = self.clients.iter_mut().find(|c| c.addr == from);
+                if result == ACK_OK && client.is_some_and(|c| std::mem::take(&mut c.new_link)) {
                     r[2..4].copy_from_slice(&EVENT_NEW.to_be_bytes());
                 }
                 if closed {
@@ -310,9 +357,7 @@ impl Idn {
                 Some(reply(RT_ACKNOWLEDGE, &r))
             }
             RT_ABORT => {
-                if self.client.is_some_and(|(a, _)| a == from) {
-                    self.close();
-                }
+                self.close(from);
                 None
             }
             _ => None,
@@ -322,13 +367,9 @@ impl Idn {
     /// An IDN-RT packet: (acknowledge result, whether the message's channel is closed;
     /// false when there was no message to process).
     fn stream(&mut self, cmd: u8, msg: &[u8], from: SocketAddr, now: Instant) -> (u8, bool) {
-        let live = self.client.is_some() && !self.timed_out(now);
-        let ours = live && self.client.is_some_and(|(a, _)| a == from);
-        if live && !ours {
-            return (ACK_OCCUPIED, false);
-        }
+        let known = self.clients.iter().any(|c| c.addr == from);
         let closing = cmd == RT_CLOSE || cmd == RT_CLOSE_ACK;
-        if msg.is_empty() && closing && !ours {
+        if msg.is_empty() && closing && !known {
             return (ACK_EMPTY_CLOSE, false);
         }
         // Malformed messages are dropped before they open a connection.
@@ -340,24 +381,41 @@ impl Idn {
         if !msg.is_empty() && (total < 8 || total > msg.len()) {
             return (ACK_INVALID, false);
         }
-        if !ours {
-            self.close();
+        if !known {
             log::info!("IDN client {from} connected");
-            self.new_link = true;
+            self.clients.push(Client {
+                addr: from,
+                last: now,
+                new_link: true,
+                channels: (0..64).map(|_| None).collect(),
+            });
         }
-        self.client = Some((from, now));
-        let closed = !msg.is_empty() && !self.message(&msg[..total]);
+        let c = self.clients.iter().position(|c| c.addr == from).unwrap();
+        self.clients[c].last = now;
+        let (result, closed) = if msg.is_empty() {
+            (ACK_OK, false)
+        } else {
+            match self.message(c, &msg[..total]) {
+                None => (ACK_OCCUPIED, true),
+                Some(open) => (ACK_OK, !open),
+            }
+        };
         if closing {
-            self.close();
+            self.close(from);
         }
-        (ACK_OK, closed)
+        if result == ACK_OCCUPIED && self.clients[c].channels.iter().all(Option::is_none) {
+            // A client that only asked for a held service is no link of its own.
+            self.clients.remove(c);
+        }
+        (result, closed)
     }
 
-    /// One channel message; returns whether its channel is open afterwards.
-    fn message(&mut self, msg: &[u8]) -> bool {
+    /// One channel message of client `c`; returns whether its channel is open
+    /// afterwards, or None when it routes to a service another client holds.
+    fn message(&mut self, c: usize, msg: &[u8]) -> Option<bool> {
         let content = u16::from_be_bytes([msg[2], msg[3]]);
         if content & 0x8000 == 0 {
-            return false; // not a channel message
+            return Some(false); // not a channel message
         }
         let cclf = content & 0x4000 != 0;
         let cnl = ((content >> 8) & 0x3F) as usize;
@@ -366,30 +424,38 @@ impl Idn {
         if chunk >= 0xC0 {
             // ponytail: frames split into IDN fragments are dropped; software relies on
             // IP fragmentation as the spec recommends. Reassemble if one shows up.
-            return self.channels[cnl].is_some();
+            return Some(self.clients[c].channels[cnl].is_some());
         }
         let mut close = false;
         if cclf {
             let Some((&[scwc, cfl, service, mode], tail)) = rest.split_first_chunk::<4>() else {
-                return false;
+                return Some(false);
             };
             let Some((tags, tail)) = tail.split_at_checked(scwc as usize * 4) else {
-                return false;
+                return Some(false);
             };
             rest = tail;
             close = cfl & 0x02 != 0;
             if cfl & 0x01 != 0 {
-                // Routing: open (or re-route) the channel. Other services and modes
-                // route to nothing, so their data is ignored.
-                let laser = matches!(service, 0 | SERVICE_ID)
-                    && matches!(mode, MODE_CONTINUOUS | MODE_DISCRETE);
+                // Routing: open (or re-route) the channel. Service 0 is the default
+                // (the first); other services and modes route to nothing, so their
+                // data is ignored.
+                let index = (service as usize).saturating_sub(1);
+                let laser =
+                    index < self.outputs.len() && matches!(mode, MODE_CONTINUOUS | MODE_DISCRETE);
+                if laser && self.owner(index).is_some_and(|a| a != self.clients[c].addr) {
+                    return None;
+                }
                 let decoder = Decoder::new(tags).filter(|_| laser);
                 let sdm = (cfl >> 4) & 0x03;
-                let c = &mut self.channels[cnl];
+                let ch = &mut self.clients[c].channels[cnl];
                 // A repeated configuration keeps the channel's frame.
-                let same = |c: &Channel| c.mode == mode && c.sdm == sdm && c.decoder == decoder;
-                if !c.as_ref().is_some_and(same) {
-                    *c = Some(Channel {
+                let same = |ch: &Channel| {
+                    ch.service == index && ch.mode == mode && ch.sdm == sdm && ch.decoder == decoder
+                };
+                if !ch.as_ref().is_some_and(same) {
+                    *ch = Some(Channel {
+                        service: index,
                         mode,
                         sdm,
                         decoder,
@@ -400,46 +466,49 @@ impl Idn {
             }
         }
         if chunk != CHUNK_VOID {
-            self.data(cnl, chunk, rest);
+            self.data(c, cnl, chunk, rest);
         }
+        let ch = &mut self.clients[c].channels[cnl];
         if close {
-            self.channels[cnl] = None;
+            *ch = None;
         }
-        self.channels[cnl].is_some()
+        Some(ch.is_some())
     }
 
-    fn data(&mut self, cnl: usize, chunk: u8, data: &[u8]) {
-        let Some(c) = &mut self.channels[cnl] else {
+    fn data(&mut self, c: usize, cnl: usize, chunk: u8, data: &[u8]) {
+        let slot = &mut self.clients[c].channels[cnl];
+        let Some(ch) = slot else {
             return; // closed channel
         };
         let Some((&[flags, ..], samples)) = data.split_first_chunk::<4>() else {
             return;
         };
-        if (flags >> 4) & 0x03 != c.sdm {
+        if (flags >> 4) & 0x03 != ch.sdm {
             // Data from another configuration: void the channel until the next one.
-            self.channels[cnl] = None;
+            *slot = None;
             return;
         }
-        let Some(dec) = &c.decoder else { return };
+        let Some(dec) = &ch.decoder else { return };
         if samples.len() % dec.size != 0 {
             return;
         }
         let points = samples.chunks_exact(dec.size).map(|s| dec.point(s));
-        match (c.mode, chunk) {
+        match (ch.mode, chunk) {
             (MODE_CONTINUOUS, CHUNK_WAVE) => {
-                self.pending.extend(points);
-                if self.pending.len() > MAX_PENDING {
-                    self.pending.drain(..self.pending.len() - MAX_PENDING);
+                let pending = &mut self.outputs[ch.service].pending;
+                pending.extend(points);
+                if pending.len() > MAX_PENDING {
+                    pending.drain(..pending.len() - MAX_PENDING);
                 }
             }
             (MODE_DISCRETE, CHUNK_FRAME) => {
-                c.frame.clear();
-                c.frame.extend(points);
+                ch.frame.clear();
+                ch.frame.extend(points);
                 // The first sample is the invisible start point.
-                if let Some(p) = c.frame.first_mut() {
+                if let Some(p) = ch.frame.first_mut() {
                     *p = Point::blank(p.x, p.y);
                 }
-                c.once = flags & 0x01 != 0;
+                ch.once = flags & 0x01 != 0;
             }
             _ => {} // chunk type not valid for the mode
         }
@@ -599,10 +668,7 @@ mod tests {
             .packet(&[SERVICEMAP_REQUEST, 0, 0, 1], addr(1), now)
             .unwrap();
         assert_eq!(r.len(), 32);
-        assert_eq!(
-            &r[4..12],
-            &[4, 24, 0, 1, SERVICE_ID, SERVICE_LASER, 0x01, 0]
-        );
+        assert_eq!(&r[4..12], &[4, 24, 0, 1, 1, SERVICE_LASER, 0x01, 0]);
 
         let r = idn
             .packet(&[PING_REQUEST, 0, 0, 9, 1, 2, 3], addr(1), now)
@@ -615,10 +681,68 @@ mod tests {
             .unwrap();
         assert_eq!(r, [GROUP_RESPONSE, 0, 0, 2, 4, 0x00, 0xFF, 0xFF]);
 
-        // While another client streams, the scan reports the unit occupied.
-        idn.client = Some((addr(2), now));
+        // While another client holds the only service, the scan reports it occupied.
+        idn.packet(
+            &packet(RT_MESSAGE, 1, MODE_CONTINUOUS, CHUNK_WAVE, 0, &[]),
+            addr(2),
+            now,
+        );
         let r = idn.packet(&[SCAN_REQUEST, 0, 0, 3], addr(1), now).unwrap();
         assert_eq!(r[6], 0x11);
+        let r = idn.packet(&[SCAN_REQUEST, 0, 0, 3], addr(2), now).unwrap();
+        assert_eq!(r[6], 0x01);
+    }
+
+    #[test]
+    fn services_each_have_their_own_client() {
+        let mut idn = Idn::new(2);
+        let t0 = Instant::now();
+        let r = idn
+            .packet(&[SERVICEMAP_REQUEST, 0, 0, 1], addr(1), t0)
+            .unwrap();
+        assert_eq!(r.len(), 4 + 4 + 2 * 24);
+        assert_eq!(&r[4..8], &[4, 24, 0, 2]);
+        assert_eq!(&r[8..12], &[1, SERVICE_LASER, 0x01, 0]);
+        assert_eq!(&r[32..36], &[2, SERVICE_LASER, 0x00, 0]);
+        assert_eq!(&r[36..49], b"BudgetLaser 2");
+
+        // Byte 14 of a configured packet is the service ID.
+        let on = |service: u8, seq: u16, x: i16| {
+            let mut p = packet(
+                RT_MESSAGE_ACK,
+                seq,
+                MODE_CONTINUOUS,
+                CHUNK_WAVE,
+                0,
+                &[sample(x, 0, [255, 0, 0]), sample(x, 100, [255, 0, 0])],
+            );
+            p[14] = service;
+            p
+        };
+        assert_eq!(idn.packet(&on(1, 1, 1000), addr(1), t0).unwrap()[5], ACK_OK);
+        assert_eq!(idn.packet(&on(2, 1, 2000), addr(2), t0).unwrap()[5], ACK_OK);
+        // Service 1 is held: a third client is refused there and not kept as a link.
+        assert_eq!(
+            idn.packet(&on(1, 1, 3000), addr(3), t0).unwrap()[5],
+            ACK_OCCUPIED
+        );
+        assert_eq!(idn.clients.len(), 2);
+        // Both held: the unit reports occupied to anyone else.
+        let r = idn.packet(&[SCAN_REQUEST, 0, 0, 3], addr(3), t0).unwrap();
+        assert_eq!(r[6], 0x11);
+
+        let mut out = Vec::new();
+        idn.take(0, t0, &mut out);
+        assert_eq!(out[0].x, 1000.0 / 32768.0);
+        idn.take(1, t0, &mut out);
+        assert_eq!(out[0].x, 2000.0 / 32768.0);
+        idn.take(2, t0, &mut out); // no such service
+        assert!(out.is_empty());
+        // One client times out; the other keeps its service.
+        idn.packet(&on(2, 2, 2000), addr(2), t0 + Duration::from_millis(900));
+        idn.take(0, t0 + Duration::from_millis(1500), &mut out);
+        assert_eq!(idn.clients.len(), 1);
+        assert_eq!(idn.clients[0].addr, addr(2));
     }
 
     #[test]
@@ -655,12 +779,12 @@ mod tests {
         );
 
         let mut out = Vec::new();
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert_eq!(out.len(), 40);
         assert_eq!(out[39].x, 19000.0 / 32768.0);
         // Next take: the last sample leads as a blanked move.
         idn.packet(&packet(RT_MESSAGE, 9, 0, CHUNK_WAVE, 0, &pts), addr(1), t0);
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert_eq!(out.len(), 21);
         assert!(out[0].blank && !out[1].blank);
 
@@ -671,7 +795,7 @@ mod tests {
             t0,
         );
         idn.packet(&packet(RT_MESSAGE, 11, 0, CHUNK_WAVE, 0, &pts), addr(1), t0);
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert!(out.is_empty());
 
         // After the link timeout, another client may connect.
@@ -703,7 +827,7 @@ mod tests {
             addr(1),
             t0,
         );
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert_eq!(out.len(), 20);
         let r = idn
             .packet(
@@ -720,9 +844,9 @@ mod tests {
             addr(1),
             t0,
         );
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         idn.packet(&packet(RT_MESSAGE, 4, 0, 0xC0, 0, &pts), addr(1), t0);
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert!(out.is_empty());
         let mut short = packet(RT_MESSAGE, 5, MODE_CONTINUOUS, CHUNK_WAVE, 0, &[]);
         short[8 + 4] = 200; // SCWC far beyond the message
@@ -734,10 +858,10 @@ mod tests {
             addr(1),
             t0,
         );
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert_eq!(out.len(), 20);
-        idn.take(t0 + Duration::from_millis(1500), &mut out);
-        assert!(out.is_empty() && idn.client.is_none());
+        idn.take(0, t0 + Duration::from_millis(1500), &mut out);
+        assert!(out.is_empty() && idn.clients.is_empty());
 
         // The close bit closes the channel after its data; abort drops the link.
         let t1 = t0 + Duration::from_secs(2);
@@ -746,17 +870,17 @@ mod tests {
             addr(1),
             t1,
         );
-        assert!(idn.channels[3].is_none() && idn.client.is_some());
+        assert!(idn.clients[0].channels[3].is_none() && !idn.clients.is_empty());
         idn.packet(
             &packet(RT_MESSAGE, 8, MODE_DISCRETE, CHUNK_FRAME, 0, &pts),
             addr(1),
             t1,
         );
         idn.packet(&[RT_ABORT, 0, 0, 9], addr(2), t1); // not the client: ignored
-        assert!(idn.channels[3].is_some());
+        assert!(idn.clients[0].channels[3].is_some());
         idn.packet(&[RT_ABORT, 0, 0, 9], addr(1), t1);
-        idn.take(t1, &mut out);
-        assert!(out.is_empty() && idn.client.is_none());
+        idn.take(0, t1, &mut out);
+        assert!(out.is_empty() && idn.clients.is_empty());
     }
 
     #[test]
@@ -771,7 +895,7 @@ mod tests {
         );
         let mut out = Vec::new();
         for _ in 0..2 {
-            idn.take(t0, &mut out);
+            idn.take(0, t0, &mut out);
             assert_eq!(out.len(), 4); // repeated until the next frame
             assert!(out[0].blank && !out[1].blank && out[1].g == 1.0);
         }
@@ -781,9 +905,9 @@ mod tests {
             addr(1),
             t0,
         );
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert_eq!(out.len(), 4);
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert!(out.is_empty());
         // A wave chunk is not valid in discrete mode.
         idn.packet(
@@ -791,7 +915,7 @@ mod tests {
             addr(1),
             t0,
         );
-        idn.take(t0, &mut out);
+        idn.take(0, t0, &mut out);
         assert!(out.is_empty());
 
         // Close with acknowledge: channel closed, link released.
@@ -802,8 +926,8 @@ mod tests {
         );
         let r = idn.packet(&[RT_CLOSE_ACK, 0, 0, 5], addr(1), t0).unwrap();
         assert_eq!(r[5], ACK_OK);
-        idn.take(t0, &mut out);
-        assert!(out.is_empty() && idn.client.is_none());
+        idn.take(0, t0, &mut out);
+        assert!(out.is_empty() && idn.clients.is_empty());
         let r = idn.packet(&[RT_CLOSE_ACK, 0, 0, 6], addr(1), t0).unwrap();
         assert_eq!(r[5], ACK_EMPTY_CLOSE);
     }

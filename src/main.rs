@@ -40,7 +40,8 @@ struct App {
     dac_points: Vec<point::Point>,
     idn: Option<Arc<Mutex<idn::Idn>>>,
     /// Points the IDN stream delivered since the previous frame.
-    idn_points: Vec<point::Point>,
+    /// Points of each IDN service, service 1 first.
+    idn_points: Vec<Vec<point::Point>>,
     frame: point::Frame,
     segments: Vec<point::Segment>,
     scratch: Vec<point::Segment>,
@@ -141,17 +142,16 @@ impl App {
                 .take(Instant::now(), &mut self.dac_points),
             None => self.dac_points.clear(),
         }
-        match &self.idn {
-            Some(idn) => idn
-                .lock()
-                .unwrap()
-                .take(Instant::now(), &mut self.idn_points),
-            None => self.idn_points.clear(),
+        if let Some(idn) = &self.idn {
+            let mut idn = idn.lock().unwrap();
+            for (s, points) in self.idn_points.iter_mut().enumerate() {
+                idn.take(s, Instant::now(), points);
+            }
         }
 
         self.segments.clear();
         self.batches.clear();
-        for f in &mut self.fixtures {
+        for (i, f) in self.fixtures.iter_mut().enumerate() {
             let mut params = f.smoother.sample(now);
             params.on &= !blackout;
             f.phases.tick(&params, dt);
@@ -164,7 +164,11 @@ impl App {
                 .tick_clip(clip.len(), &params, self.cfg.ilda.frame_rate, dt);
             let points = match params.pattern {
                 Some(Pattern::EtherDream) => self.dac_points.as_slice(),
-                Some(Pattern::Idn) => self.idn_points.as_slice(),
+                // Channel 12 picks the service, 0 = service 1.
+                Some(Pattern::Idn) => self
+                    .idn_points
+                    .get(params.file as usize)
+                    .map_or(&[][..], Vec::as_slice),
                 _ => clip
                     .get(f.phases.clip_pos as usize)
                     .map_or(&[][..], Vec::as_slice),
@@ -192,13 +196,19 @@ impl App {
             self.batches.push(render::Batch {
                 range: start..self.segments.len(),
                 zone: f.cfg.zone,
+                fixture: Some(i),
             });
         }
-        for (cfg, points) in [
-            (&self.cfg.etherdream, &self.dac_points),
-            (&self.cfg.idn, &self.idn_points),
-        ] {
-            if !cfg.direct || points.is_empty() {
+        let dac =
+            (self.cfg.etherdream.direct).then_some((self.cfg.etherdream.zone, &self.dac_points));
+        let idn = self
+            .cfg
+            .idn
+            .zones()
+            .zip(&self.idn_points)
+            .filter(|_| self.cfg.idn.direct);
+        for (zone, points) in dac.into_iter().chain(idn) {
+            if points.is_empty() {
                 continue;
             }
             point::segments(points, &mut self.scratch);
@@ -206,7 +216,8 @@ impl App {
             self.segments.extend_from_slice(&self.scratch);
             self.batches.push(render::Batch {
                 range: start..self.segments.len(),
-                zone: cfg.zone,
+                zone,
+                fixture: None,
             });
         }
         let presented = self
@@ -458,7 +469,7 @@ fn main() {
         dac
     });
     let idn = cfg.idn.enabled.then(|| {
-        let idn = Arc::new(Mutex::new(idn::Idn::default()));
+        let idn = Arc::new(Mutex::new(idn::Idn::new(cfg.idn.zones().count())));
         if let Err(e) = idn::spawn(idn.clone()) {
             log::error!("IDN receiver not started: {e}");
         }
@@ -484,7 +495,7 @@ fn main() {
         dac,
         dac_points: Vec::new(),
         idn,
-        idn_points: Vec::new(),
+        idn_points: vec![Vec::new(); cfg.idn.zones().count()],
         frame: point::Frame::default(),
         segments: Vec::new(),
         scratch: Vec::new(),

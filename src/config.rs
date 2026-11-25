@@ -8,19 +8,26 @@ pub struct Config {
     pub output: Output,
     pub ilda: Ilda,
     pub etherdream: Stream,
-    pub idn: Stream,
+    pub idn: IdnStream,
     #[serde(rename = "fixture")]
     pub fixtures: Vec<Fixture>,
     #[serde(rename = "mask")]
     pub masks: Vec<Mask>,
 }
 
-/// An area of the output where nothing is drawn, from any source (e.g. the audience).
+/// An area of the output that is blanked or dimmed (e.g. the audience).
 #[derive(Deserialize, Debug, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct Mask {
     /// Polygon corners as fractions of the output, origin top-left.
     pub points: Vec<[f32; 2]>,
+    /// Share of the light let through: 0 blanks (the default), 1 changes nothing.
+    #[serde(default)]
+    pub dim: f32,
+    /// Fixture numbers (1 = the first [[fixture]]) the mask applies to; empty means
+    /// the whole output, every source included.
+    #[serde(default)]
+    pub fixtures: Vec<usize>,
 }
 
 /// One virtual fixture: a DMX footprint drawn into its own zone of the output.
@@ -115,6 +122,38 @@ pub struct Stream {
     pub zone: [f32; 4],
 }
 
+/// The IDN receiver: a `Stream` that can offer several laser services, one zone each.
+#[derive(Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields, default)]
+pub struct IdnStream {
+    pub enabled: bool,
+    /// As `Stream::direct`, for every service.
+    pub direct: bool,
+    /// Zone of service 1, as `Stream::zone`.
+    pub zone: [f32; 4],
+    /// One more laser service per entry (service 2, 3, ...) with its zone, so
+    /// several programs, or several outputs of one, each drive their own laser.
+    pub extra_services: Vec<[f32; 4]>,
+}
+
+impl IdnStream {
+    /// The zone of every service, service 1 first.
+    pub fn zones(&self) -> impl Iterator<Item = [f32; 4]> + '_ {
+        std::iter::once(self.zone).chain(self.extra_services.iter().copied())
+    }
+}
+
+impl Default for IdnStream {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            direct: true,
+            zone: [0.0, 0.0, 1.0, 1.0],
+            extra_services: Vec::new(),
+        }
+    }
+}
+
 impl Default for Stream {
     fn default() -> Self {
         Self {
@@ -150,7 +189,7 @@ impl Default for Config {
             output: Output::default(),
             ilda: Ilda::default(),
             etherdream: Stream::default(),
-            idn: Stream::default(),
+            idn: IdnStream::default(),
             fixtures: vec![Fixture::default()],
             masks: Vec::new(),
         }
@@ -206,19 +245,33 @@ impl Config {
                 ));
             }
         }
-        for (name, s) in [("etherdream", &self.etherdream), ("idn", &self.idn)] {
-            if !zone_ok(s.zone) {
+        let zones = std::iter::once(("etherdream.zone", self.etherdream.zone))
+            .chain(self.idn.zones().map(|z| ("idn zone", z)));
+        for (name, z) in zones {
+            if !zone_ok(z) {
                 return Err(format!(
-                    "{name}.zone {:?} must lie within 0..1 with positive size",
-                    s.zone
+                    "{name} {z:?} must lie within 0..1 with positive size"
                 ));
             }
+        }
+        if self.idn.extra_services.len() > 254 {
+            return Err("idn.extra_services: at most 254 (255 services)".into());
         }
         for (i, m) in self.masks.iter().enumerate() {
             let inside = |v: f32| (0.0..=1.0).contains(&v);
             if m.points.len() < 3 || !m.points.iter().flatten().all(|&v| inside(v)) {
                 return Err(format!(
                     "mask {}: points need at least 3 corners within 0..1",
+                    i + 1
+                ));
+            }
+            if !inside(m.dim) {
+                return Err(format!("mask {}: dim {} must be 0..1", i + 1, m.dim));
+            }
+            let n = self.fixtures.len();
+            if let Some(f) = m.fixtures.iter().find(|&&f| !(1..=n).contains(&f)) {
+                return Err(format!(
+                    "mask {}: fixture {f} does not exist (there are {n})",
                     i + 1
                 ));
             }
@@ -346,6 +399,11 @@ mod tests {
         assert!(bad.validate().is_err());
         let bad: Config = toml::from_str("[idn]\nzone = [0.0, 0.0, 0.0, 1.0]").unwrap();
         assert!(bad.validate().is_err());
+        let two: Config = toml::from_str("[idn]\nextra_services = [[0.5, 0.0, 0.5, 1.0]]").unwrap();
+        assert_eq!(two.idn.zones().count(), 2);
+        assert!(two.validate().is_ok());
+        let bad: Config = toml::from_str("[idn]\nextra_services = [[0.5, 0.0, 0.6, 1.0]]").unwrap();
+        assert!(bad.validate().is_err());
         let shipped: Config = toml::from_str(include_str!("../budgetlaser.toml")).unwrap();
         assert!(shipped.validate().is_ok());
     }
@@ -361,6 +419,17 @@ mod tests {
         let bad: Config =
             toml::from_str("[[mask]]\npoints = [[0.0, 70.0], [1.0, 70.0], [1.0, 1.0]]").unwrap();
         assert!(bad.validate().is_err());
+        let tri = "points = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]";
+        let check = |extra: &str| {
+            toml::from_str::<Config>(&format!("[[mask]]\n{tri}\n{extra}"))
+                .unwrap()
+                .validate()
+                .is_ok()
+        };
+        assert!(check("dim = 0.25\nfixtures = [1]"));
+        assert!(!check("dim = 1.5"));
+        assert!(!check("fixtures = [2]")); // only one fixture by default
+        assert!(!check("fixtures = [0]"));
     }
 
     #[test]

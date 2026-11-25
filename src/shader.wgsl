@@ -8,6 +8,8 @@ struct Uniforms {
     _pad: f32,
 };
 @group(0) @binding(0) var<uniform> u: Uniforms;
+// Masks that name fixtures: layer 0 lets everything through. Only the line pass uses it.
+@group(1) @binding(2) var fixture_mask: texture_2d_array<f32>;
 
 // ---- line pass: one capsule per instance -----------------------------------
 
@@ -16,6 +18,7 @@ struct Seg {
     @location(1) p1: vec2<f32>,
     @location(2) rgb: vec3<f32>,
     @location(3) width: f32,  // multiplier on half_width
+    @location(4) layer: u32,  // layer of fixture_mask
 };
 
 struct LineOut {
@@ -25,6 +28,7 @@ struct LineOut {
     @location(2) b: vec2<f32>,
     @location(3) rgb: vec3<f32>,
     @location(4) hw: f32,
+    @location(5) @interpolate(flat) layer: u32,
 };
 
 // Segments arrive in NDC of the whole target (zone mapping happens on the CPU).
@@ -53,6 +57,7 @@ fn vs_line(@builtin(vertex_index) vi: u32, s: Seg) -> LineOut {
     o.b = b;
     o.rgb = s.rgb;
     o.hw = hw;
+    o.layer = s.layer;
     return o;
 }
 
@@ -62,14 +67,16 @@ fn fs_line(i: LineOut) -> @location(0) vec4<f32> {
     let t = clamp(dot(i.px - i.a, ab) / max(dot(ab, ab), 1e-6), 0.0, 1.0);
     let dist = length(i.px - (i.a + ab * t));
     let cov = 1.0 - smoothstep(i.hw - 0.75, i.hw + 0.75, dist);
-    return vec4<f32>(i.rgb * cov, 1.0);
+    let keep = textureLoad(fixture_mask, vec2<i32>(i.pos.xy), i32(i.layer), 0).r;
+    return vec4<f32>(i.rgb * cov * keep, 1.0);
 }
 
 // ---- fullscreen passes: decay (previous frame) and tonemap -----------------
 
 @group(1) @binding(0) var src: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
-// 0 inside a [[mask]], 1 elsewhere; one texel per output pixel.
+// Masks for every source, one texel per output pixel: r = light let through,
+// g = 0 inside any mask (also one that names fixtures), for show_masks.
 @group(2) @binding(0) var mask: texture_2d<f32>;
 
 struct FsOut {
@@ -96,8 +103,8 @@ fn fs_tonemap(i: FsOut) -> @location(0) vec4<f32> {
     let hdr = max(textureSample(src, samp, i.uv).rgb * u.exposure, vec3<f32>(0.0));
     var c = 1.0 - exp(-hdr);               // soft shoulder, black stays exactly black
     if (u.gamma_out > 0.5) { c = pow(c, vec3<f32>(1.0 / 2.2)); }
-    // Last step, so no source and no glow reaches a masked pixel.
-    let m = textureLoad(mask, vec2<i32>(i.pos.xy), 0).r;
-    c = c * m + vec3<f32>(0.25, 0.0, 0.0) * u.show_masks * (1.0 - m);
+    // Last step, so every source and the glow go through the masks for every source.
+    let m = textureLoad(mask, vec2<i32>(i.pos.xy), 0).rg;
+    c = c * m.r + vec3<f32>(0.25, 0.0, 0.0) * u.show_masks * (1.0 - m.g);
     return vec4<f32>(c, 1.0);
 }
